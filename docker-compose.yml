@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - DATA_BUCKET=local-ml-voice-analysis
+      - AWS_REGION=us-east-1
+      - DATABASE_URL=postgresql://voice_user:voice_pass@postgres:5432/voice_analysis
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./backend:/app
+      - ./models:/app/models
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - voice-analysis-network
+
+  # Frontend Dashboard
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NODE_ENV=development
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - voice-analysis-network
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=voice_analysis
+      - POSTGRES_USER=voice_user
+      - POSTGRES_PASSWORD=voice_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - voice-analysis-network
+
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - voice-analysis-network
+
+  # LocalStack for AWS services (development)
+  localstack:
+    image: localstack/localstack:latest
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3,transcribe
+      - DEBUG=1
+      - DATA_DIR=/tmp/localstack/data
+    volumes:
+      - localstack_data:/tmp/localstack
+    networks:
+      - voice-analysis-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  localstack_data:
+
+networks:
+  voice-analysis-network:
+    driver: bridge
