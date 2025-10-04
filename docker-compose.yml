@@ -1,89 +1,201 @@
-version: '3.8'
+version: '3.9'
 
 services:
-  # Backend API
+  # Enhanced Backend API
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        - ENVIRONMENT=development
     ports:
       - "8000:8000"
     environment:
       - ENVIRONMENT=development
-      - DATA_BUCKET=local-ml-voice-analysis
+      - DEBUG=true
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DATA_BUCKET=ml-voice-analysis-dev
       - AWS_REGION=us-east-1
-      - DATABASE_URL=postgresql://voice_user:voice_pass@postgres:5432/voice_analysis
-      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql+asyncpg://voice_user:voice_pass@postgres:5432/voice_analysis
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=dev-secret-key-change-in-production
     volumes:
       - ./backend:/app
       - ./models:/app/models
+      - ./data:/app/data
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - voice-analysis-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
-  # Frontend Dashboard
+  # Enhanced Frontend Dashboard
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        - NODE_ENV=development
     ports:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_APP_NAME=Voice Lead Analysis
+      - NEXT_PUBLIC_VERSION=3.0.0
       - NODE_ENV=development
     volumes:
       - ./frontend:/app
       - /app/node_modules
+      - /app/.next
     depends_on:
       - backend
     networks:
       - voice-analysis-network
+    restart: unless-stopped
 
-  # PostgreSQL Database
+  # PostgreSQL Database with optimizations
   postgres:
-    image: postgres:15-alpine
+    image: postgres:16-alpine
     environment:
       - POSTGRES_DB=voice_analysis
       - POSTGRES_USER=voice_user
       - POSTGRES_PASSWORD=voice_pass
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256
+      - POSTGRES_HOST_AUTH_METHOD=scram-sha-256
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks:
       - voice-analysis-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U voice_user -d voice_analysis"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: >
+      postgres
+      -c shared_preload_libraries=pg_stat_statements
+      -c pg_stat_statements.track=all
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.7
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
 
-  # Redis for caching
+  # Redis for caching and sessions
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
     networks:
       - voice-analysis-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    command: redis-server /usr/local/etc/redis/redis.conf
 
-  # LocalStack for AWS services (development)
+  # Enhanced LocalStack for AWS services
   localstack:
-    image: localstack/localstack:latest
+    image: localstack/localstack:3.0
     ports:
       - "4566:4566"
     environment:
-      - SERVICES=s3,transcribe
+      - SERVICES=s3,transcribe,lambda,sts,iam
       - DEBUG=1
-      - DATA_DIR=/tmp/localstack/data
+      - PERSISTENCE=1
+      - LAMBDA_EXECUTOR=docker-reuse
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - HOST_TMP_FOLDER=/tmp/localstack
     volumes:
-      - localstack_data:/tmp/localstack
+      - "/tmp/localstack:/tmp/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - localstack_data:/var/lib/localstack
+      - ./localstack:/etc/localstack/init/ready.d
     networks:
       - voice-analysis-network
+    restart: unless-stopped
+
+  # Nginx reverse proxy for production-like setup
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - voice-analysis-network
+    restart: unless-stopped
+
+  # Monitoring with Prometheus (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - voice-analysis-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Grafana for dashboards (optional)
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana:/etc/grafana/provisioning
+    networks:
+      - voice-analysis-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
 
 volumes:
   postgres_data:
+    driver: local
   redis_data:
+    driver: local
   localstack_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
 
 networks:
   voice-analysis-network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
