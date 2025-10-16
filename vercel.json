@@ -1,39 +1,84 @@
 {
   "version": 2,
+  "name": "ml-voice-lead-analysis",
   "builds": [
     {
       "src": "frontend/package.json",
       "use": "@vercel/next",
       "config": {
-        "projectSettings": {
-          "framework": "nextjs"
-        }
+        "distDir": ".next"
       }
     },
     {
       "src": "backend/main.py",
       "use": "@vercel/python",
       "config": {
-        "maxLambdaSize": "50mb"
+        "maxLambdaSize": "50mb",
+        "runtime": "python3.11"
       }
     }
   ],
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "backend/main.py"
+      "dest": "/backend/main.py"
     },
     {
       "src": "/(.*)",
-      "dest": "frontend/$1"
+      "dest": "/frontend/$1"
     }
   ],
   "env": {
-    "ENVIRONMENT": "production"
+    "ENVIRONMENT": "production",
+    "CLOUD_DEPLOYMENT": "true",
+    "USE_TRANSFORMERS": "false",
+    "LIGHTWEIGHT_MODELS_ONLY": "true"
+  },
+  "build": {
+    "env": {
+      "NODE_ENV": "production",
+      "NEXT_TELEMETRY_DISABLED": "1"
+    }
   },
   "functions": {
     "backend/main.py": {
       "maxDuration": 30
     }
-  }
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "s-maxage=60, stale-while-revalidate"
+        },
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, POST, PUT, DELETE, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type, Authorization"
+        }
+      ]
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/docs",
+      "destination": "/api/v1/docs",
+      "permanent": false
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/health",
+      "destination": "/api/health"
+    }
+  ]
 }

@@ -1,0 +1,50 @@
+# Development files
+.env
+.env.local
+.env.example
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Testing
+tests/
+pytest.ini
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Development tools
+.git/
+.gitignore
+.pre-commit-config.yaml
+.github/
+
+# Documentation
+README.md
+docs/
+*.md
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs and temporary files
+logs/
+*.log
+tmp/
+temp/
+
+# Database files
+*.db
+*.sqlite
+
+# OS files
+.DS_Store
+Thumbs.db
