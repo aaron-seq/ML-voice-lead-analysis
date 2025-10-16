@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: ml-voice-analysis-api
+    env: python
+    region: oregon
+    buildCommand: |
+      cd backend &&
+      pip install --upgrade pip &&
+      pip install -r requirements.txt &&
+      python -m spacy download en_core_web_sm
+    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    repo: https://github.com/aaron-seq/ML-voice-lead-analysis.git
+    branch: main
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: PYTHON_VERSION
+        value: "3.11"
+      - key: PORT
+        generateValue: true
+      - key: DATA_BUCKET
+        sync: false  # Set manually in Render dashboard
+      - key: AWS_REGION
+        value: us-east-1
+      - key: AWS_ACCESS_KEY_ID
+        sync: false  # Set manually in Render dashboard
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false  # Set manually in Render dashboard
+      - key: SECRET_KEY
+        generateValue: true
+    disk:
+      name: ml-voice-analysis-disk
+      mountPath: /app/data
+      sizeGB: 1
+    scaling:
+      minInstances: 0
+      maxInstances: 1
