@@ -5,7 +5,7 @@ gunicorn==23.0.0
 python-multipart==0.0.20
 
 # Cloud Services and Storage  
-boto3==1.35.71
+boto3==1.35.81
 aioboto3==13.3.0
 
 # Machine Learning and NLP
