@@ -11,6 +11,7 @@ import logging
 import os
 
 import boto3
+from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -287,7 +288,21 @@ class VoiceAnalysisService:
             
             # Calculate pagination
             total_file_count = len(analysis_files)
-            total_page_count = (total_file_count + items_per_page - 1) // items_per_page
+            total_page_count = (total_file_count + items_per_page - 1) // items_per_page if total_file_count > 0 else 0
+            
+            # Validate page number boundaries
+            if page_number < 1:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Page number must be greater than or equal to 1"
+                )
+            
+            if total_page_count > 0 and page_number > total_page_count:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Page {page_number} is out of bounds. Valid range: 1-{total_page_count}. Total items: {total_file_count}"
+                )
+            
             start_index = (page_number - 1) * items_per_page
             end_index = start_index + items_per_page
             page_files = analysis_files[start_index:end_index]
@@ -311,6 +326,8 @@ class VoiceAnalysisService:
                 )
             )
             
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Error retrieving paginated call list: {str(e)}")
             raise HTTPException(
@@ -424,11 +441,24 @@ class VoiceAnalysisService:
             
             return ComprehensiveCallAnalysis(**analysis_data)
             
-        except aws_connector.s3_client.exceptions.NoSuchKey:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Analysis results for '{file_name}' not found"
-            )
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', '')
+            if error_code == 'NoSuchKey':
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Analysis results for '{file_name}' not found"
+                )
+            elif error_code == 'AccessDenied':
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied to analysis file"
+                )
+            else:
+                logger.error(f"S3 ClientError for {file_name}: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to retrieve analysis from storage"
+                )
         except json.JSONDecodeError:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -600,6 +630,7 @@ async def retrieve_analyzed_calls(
     - Rich summary data including sentiment and lead scores
     - High-performance caching for optimal response times
     - Mock data support for testing environments
+    - Boundary validation to prevent out-of-bounds requests
     """
     return await analysis_service.get_call_list_paginated(**pagination_params)
 
