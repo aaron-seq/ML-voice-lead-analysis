@@ -4,13 +4,17 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any, Union
-from datetime import datetime
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager
+from pathlib import PurePath
 import json
 import logging
 import os
+import re
+import uuid
 
 import boto3
+from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -19,7 +23,7 @@ load_dotenv()
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - [%(request_id)s] %(message)s'
 )
 logger = logging.getLogger(__name__)
 
@@ -27,7 +31,7 @@ logger = logging.getLogger(__name__)
 class ApplicationSettings:
     def __init__(self):
         self.app_name = "ML Voice Lead Analysis API"
-        self.version = "4.0.0"
+        self.version = "4.1.0"  # Version bump for security fixes
         self.environment = os.getenv("ENVIRONMENT", "development")
         self.debug_mode = self.environment == "development"
         
@@ -46,6 +50,9 @@ class ApplicationSettings:
         self.max_page_size = 100
         self.api_version = "v1"
         
+        # Security Configuration
+        self.max_request_size_bytes = 100_000_000  # 100MB
+        
         # CORS origins
         self.cors_origins = [
             "http://localhost:3000",
@@ -58,13 +65,71 @@ class ApplicationSettings:
 
 settings = ApplicationSettings()
 
+# Security Validation Functions
+def validate_file_name(file_name: str) -> str:
+    """
+    Validate and sanitize file names to prevent path traversal attacks.
+    
+    Args:
+        file_name: The file name to validate
+        
+    Returns:
+        Validated file name
+        
+    Raises:
+        HTTPException: If file name is invalid or contains malicious patterns
+    """
+    # Reject empty strings
+    if not file_name or not file_name.strip():
+        logger.warning(f"Empty file name rejected")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File name cannot be empty"
+        )
+    
+    # Reject path traversal attempts
+    if '..' in file_name or file_name.startswith('/'):
+        logger.warning(f"Path traversal attempt detected: {file_name}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file name format: path traversal detected"
+        )
+    
+    # Only allow alphanumeric, hyphens, underscores, dots, and forward slashes for subdirectories
+    if not re.match(r'^[a-zA-Z0-9._/-]+$', file_name):
+        logger.warning(f"Invalid characters in file name: {file_name}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File name contains invalid characters. Only alphanumeric, hyphens, underscores, dots, and slashes are allowed."
+        )
+    
+    # Ensure file name doesn't try to break out of prefix directory
+    full_path = PurePath(settings.analysis_results_prefix) / file_name
+    if not str(full_path).startswith(settings.analysis_results_prefix):
+        logger.warning(f"File name tries to escape prefix: {file_name}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Access denied: file path is invalid"
+        )
+    
+    # Additional security: check for null bytes
+    if '\x00' in file_name:
+        logger.warning(f"Null byte detected in file name: {file_name}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file name: null bytes not allowed"
+        )
+    
+    logger.debug(f"File name validated successfully: {file_name}")
+    return file_name
+
 # Pydantic Models
 class BaseApiResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     
     success: bool = True
     message: Optional[str] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class PaginationMetadata(BaseModel):
     current_page: int
@@ -225,7 +290,7 @@ class VoiceAnalysisService:
                 call_summaries=[
                     VoiceCallSummary(
                         file_identifier="sample-call-001.json",
-                        upload_timestamp=datetime.utcnow(),
+                        upload_timestamp=datetime.now(timezone.utc),
                         file_size_mb=2.5,
                         processing_status="completed",
                         lead_classification="Hot",
@@ -245,6 +310,13 @@ class VoiceAnalysisService:
             )
         
         try:
+            # Validate page number
+            if page_number < 1:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Page number must be >= 1"
+                )
+            
             s3_client = aws_connector.get_s3_client()
             
             # List analysis result files
@@ -287,7 +359,15 @@ class VoiceAnalysisService:
             
             # Calculate pagination
             total_file_count = len(analysis_files)
-            total_page_count = (total_file_count + items_per_page - 1) // items_per_page
+            total_page_count = (total_file_count + items_per_page - 1) // items_per_page if total_file_count > 0 else 0
+            
+            # Validate requested page is within bounds
+            if total_file_count > 0 and page_number > total_page_count:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Page {page_number} is out of bounds. Valid range: 1-{total_page_count}"
+                )
+            
             start_index = (page_number - 1) * items_per_page
             end_index = start_index + items_per_page
             page_files = analysis_files[start_index:end_index]
@@ -311,8 +391,17 @@ class VoiceAnalysisService:
                 )
             )
             
+        except HTTPException:
+            raise
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            logger.error(f"AWS S3 error in get_call_list_paginated: {error_code} - {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Storage service error: {error_code}"
+            )
         except Exception as e:
-            logger.error(f"Error retrieving paginated call list: {str(e)}")
+            logger.error(f"Error retrieving paginated call list: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Unable to retrieve call analysis list"
@@ -365,7 +454,8 @@ class VoiceAnalysisService:
                 overall_sentiment=overall_sentiment
             )
             
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Could not load detailed analysis for {file_name}: {str(e)}")
             # Return basic summary if detailed analysis fails
             return VoiceCallSummary(
                 file_identifier=file_name,
@@ -375,11 +465,14 @@ class VoiceAnalysisService:
             )
     
     async def get_detailed_call_analysis(self, file_name: str) -> ComprehensiveCallAnalysis:
+        # Validate file name first
+        validated_file_name = validate_file_name(file_name)
+        
         # Return mock data in testing environment
         if settings.is_testing_environment or settings.disable_aws_checks:
-            logger.info("Returning mock detailed analysis for testing environment")
+            logger.info(f"Returning mock detailed analysis for testing environment: {validated_file_name}")
             mock_data = {
-                "fileName": file_name,
+                "fileName": validated_file_name,
                 "transcript": "This is a sample transcript for testing purposes.",
                 "sentiment": 0.75,
                 "keywords": ["sample", "testing", "analysis"],
@@ -410,7 +503,8 @@ class VoiceAnalysisService:
             }
             return ComprehensiveCallAnalysis(**mock_data)
         
-        analysis_file_key = f"{settings.analysis_results_prefix}{file_name}"
+        analysis_file_key = f"{settings.analysis_results_prefix}{validated_file_name}"
+        logger.info(f"Retrieving analysis from S3: {analysis_file_key}")
         
         try:
             s3_client = aws_connector.get_s3_client()
@@ -424,18 +518,36 @@ class VoiceAnalysisService:
             
             return ComprehensiveCallAnalysis(**analysis_data)
             
-        except aws_connector.s3_client.exceptions.NoSuchKey:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Analysis results for '{file_name}' not found"
-            )
-        except json.JSONDecodeError:
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            
+            if error_code == 'NoSuchKey':
+                logger.warning(f"Analysis file not found: {analysis_file_key}")
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Analysis results for '{validated_file_name}' not found"
+                )
+            elif error_code == 'AccessDenied':
+                logger.error(f"Access denied to S3 resource: {analysis_file_key}")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied to analysis results"
+                )
+            else:
+                logger.error(f"AWS S3 error retrieving {analysis_file_key}: {error_code} - {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Storage service error: {error_code}"
+                )
+                
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in analysis file {analysis_file_key}: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Invalid analysis data format for '{file_name}'"
+                detail=f"Invalid analysis data format for '{validated_file_name}'"
             )
         except Exception as e:
-            logger.error(f"Error retrieving detailed analysis for {file_name}: {str(e)}")
+            logger.error(f"Unexpected error retrieving detailed analysis for {validated_file_name}: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to retrieve detailed analysis"
@@ -482,7 +594,65 @@ app = FastAPI(
     debug=settings.debug_mode
 )
 
-# Middleware Configuration
+# Security Middleware
+@app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    """Add unique request ID to track requests across logs."""
+    request_id = str(uuid.uuid4())
+    request.state.request_id = request_id
+    
+    # Add request ID to logging context
+    import logging
+    old_factory = logging.getLogRecordFactory()
+    
+    def record_factory(*args, **kwargs):
+        record = old_factory(*args, **kwargs)
+        record.request_id = request_id
+        return record
+    
+    logging.setLogRecordFactory(record_factory)
+    
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    
+    logging.setLogRecordFactory(old_factory)
+    return response
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Add security headers to all responses."""
+    response = await call_next(request)
+    
+    # Security headers
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    
+    return response
+
+@app.middleware("http")
+async def limit_request_size(request: Request, call_next):
+    """Limit request payload size to prevent large payload attacks."""
+    if request.method in ["POST", "PUT", "PATCH"]:
+        if "content-length" in request.headers:
+            content_length = int(request.headers["content-length"])
+            if content_length > settings.max_request_size_bytes:
+                logger.warning(f"Request payload too large: {content_length} bytes (max: {settings.max_request_size_bytes})")
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "success": False,
+                        "message": "Request payload too large",
+                        "max_size_mb": settings.max_request_size_bytes / (1024 * 1024),
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    }
+                )
+    
+    return await call_next(request)
+
+# Standard Middleware
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
@@ -490,14 +660,15 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
-    expose_headers=["X-Total-Count", "X-Page-Count"]
+    expose_headers=["X-Total-Count", "X-Page-Count", "X-Request-ID"]
 )
 
 # Exception Handlers
 @app.exception_handler(HTTPException)
 async def handle_http_exceptions(request: Request, exc: HTTPException):
+    request_id = getattr(request.state, 'request_id', 'unknown')
     logger.error(
-        f"HTTP Exception - Path: {request.url.path}, Method: {request.method}, "
+        f"[{request_id}] HTTP Exception - Path: {request.url.path}, Method: {request.method}, "
         f"Status: {exc.status_code}, Detail: {exc.detail}"
     )
     
@@ -507,8 +678,9 @@ async def handle_http_exceptions(request: Request, exc: HTTPException):
             "success": False,
             "message": exc.detail,
             "error_code": exc.status_code,
-            "timestamp": datetime.utcnow().isoformat(),
-            "request_path": request.url.path
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "request_path": request.url.path,
+            "request_id": request_id
         }
     )
 
@@ -542,7 +714,7 @@ async def api_root_information():
         "health_endpoint": "/health",
         "status": "operational",
         "aws_enabled": not (settings.disable_aws_checks or settings.is_testing_environment),
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
 @app.get("/health", response_model=SystemHealthResponse, tags=["System"])
@@ -600,6 +772,7 @@ async def retrieve_analyzed_calls(
     - Rich summary data including sentiment and lead scores
     - High-performance caching for optimal response times
     - Mock data support for testing environments
+    - Pagination boundary validation
     """
     return await analysis_service.get_call_list_paginated(**pagination_params)
 
@@ -613,6 +786,8 @@ async def retrieve_detailed_call_analysis(
 ):
     """
     Retrieve comprehensive analysis results for a specific voice call.
+    
+    Security: File name is validated to prevent path traversal attacks.
     
     Provides detailed insights including:
     - Complete conversation transcript
@@ -632,20 +807,23 @@ async def initiate_call_reprocessing(
 ):
     """
     Initiate reprocessing of a voice call with updated analysis models.
+    Security: File name is validated to prevent path traversal attacks.
     """
+    # Validate file name
+    validated_file_name = validate_file_name(file_name)
     
     # Add background task for reprocessing
     background_tasks.add_task(
         logger.info,
-        f"Reprocessing initiated for file: {file_name}"
+        f"Reprocessing initiated for file: {validated_file_name}"
     )
     
     return {
         "success": True,
-        "message": f"Reprocessing initiated for {file_name}",
+        "message": f"Reprocessing initiated for {validated_file_name}",
         "processing_status": "queued",
         "estimated_completion_minutes": "2-3",
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
 @app.get(f"/{settings.api_version}/analytics/dashboard", tags=["Analytics"])
@@ -664,7 +842,7 @@ async def get_analytics_dashboard():
             "model_accuracy_stats": {"lead_scoring": 0.87, "sentiment": 0.92}
         },
         "environment": settings.environment,
-        "last_updated": datetime.utcnow().isoformat()
+        "last_updated": datetime.now(timezone.utc).isoformat()
     }
 
 # Development Server Configuration
