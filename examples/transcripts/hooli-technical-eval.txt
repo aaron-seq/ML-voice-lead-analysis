@@ -1,0 +1,17 @@
+Rep: Thanks for joining, Wei. You mentioned you're evaluating a few options.
+Prospect: That's right. We're running an RFP, you're one of four on the shortlist.
+Rep: Appreciate the transparency. What's driving the evaluation?
+Prospect: Our current setup doesn't scale. We're at about two hundred pipelines and it falls over weekly.
+Prospect: It's become a top priority because we have a compliance deadline in Q1.
+Rep: What does the compliance requirement involve?
+Prospect: Data residency in the EU, and we need SOC 2 evidence for the audit.
+Rep: We support EU data residency and we're SOC 2 Type II. I can share the report under NDA.
+Prospect: Please do. Does it integrate with Airflow? We have a lot invested there.
+Rep: Yes, natively, and we can run alongside Airflow during migration.
+Prospect: Good. What about SSO, we use Okta.
+Rep: Supported out of the box.
+Prospect: Okay. I should say the decision goes to an architecture committee, it's not just me.
+Rep: Understood. Would it help to run a proof of concept so the committee has something concrete?
+Prospect: Yes, a POC would help a lot. Can you scope a two week one?
+Rep: Absolutely, I'll send a scope document this week.
+Prospect: Great, and send the pricing alongside it. We have budget allocated for this.

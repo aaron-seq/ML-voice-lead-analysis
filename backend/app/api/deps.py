@@ -1,0 +1,81 @@
+"""FastAPI dependencies: settings, auth, repositories, engine."""
+
+from __future__ import annotations
+
+from typing import Annotated
+
+from fastapi import Depends, Header, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.analysis.engine import AnalysisEngine
+from app.core.config import Settings, get_settings
+from app.core.security import ANONYMOUS_ADMIN, ApiKeyRegistry, Principal, Role
+from app.db.repository import AuditRepository, CallRepository
+from app.db.session import get_session
+
+SettingsDep = Annotated[Settings, Depends(get_settings)]
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+
+async def get_principal(
+    request: Request,
+    settings: SettingsDep,
+    x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+) -> Principal:
+    """Resolve the caller.
+
+    With ``AUTH_ENABLED=false`` (local default) every caller is an admin, which
+    keeps a fresh clone usable without ceremony. Config forbids that in
+    staging and production.
+    """
+    if not settings.auth_enabled:
+        return ANONYMOUS_ADMIN
+
+    registry: ApiKeyRegistry = request.app.state.api_keys
+    principal = registry.resolve(x_api_key)
+
+    limiter = request.app.state.rate_limiter
+    limiter.check(principal.id)
+
+    return principal
+
+
+PrincipalDep = Annotated[Principal, Depends(get_principal)]
+
+
+def require_role(minimum: Role):
+    """Build a dependency enforcing a minimum role."""
+
+    async def _check(principal: PrincipalDep) -> Principal:
+        principal.require(minimum)
+        return principal
+
+    return _check
+
+
+RequireViewer = Annotated[Principal, Depends(require_role(Role.VIEWER))]
+RequireAnalyst = Annotated[Principal, Depends(require_role(Role.ANALYST))]
+RequireAdmin = Annotated[Principal, Depends(require_role(Role.ADMIN))]
+
+
+async def get_call_repository(session: SessionDep) -> CallRepository:
+    return CallRepository(session)
+
+
+async def get_audit_repository(session: SessionDep) -> AuditRepository:
+    return AuditRepository(session)
+
+
+def get_analysis_engine(request: Request) -> AnalysisEngine:
+    """The engine built once at startup; reused across requests."""
+    return request.app.state.engine
+
+
+def get_blob_store(request: Request):
+    return request.app.state.blob_store
+
+
+CallRepoDep = Annotated[CallRepository, Depends(get_call_repository)]
+AuditRepoDep = Annotated[AuditRepository, Depends(get_audit_repository)]
+EngineDep = Annotated[AnalysisEngine, Depends(get_analysis_engine)]
+BlobStoreDep = Annotated[object, Depends(get_blob_store)]

@@ -1,16 +1,19 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
+
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'ML Voice Lead Analysis | AI-Powered Sales Call Insights',
-  description: 'Transform your sales conversations into actionable insights with advanced ML, real-time sentiment analysis, and intelligent lead scoring.',
-  keywords: ['voice analysis', 'lead scoring', 'sentiment analysis', 'sales calls', 'AI', 'machine learning'],
-  authors: [{ name: 'Aaron Sequeira' }],
-  openGraph: {
-    title: 'ML Voice Lead Analysis',
-    description: 'AI-Powered Sales Call Analysis Platform',
-    type: 'website',
-  },
+  title: 'CallSense — Call intelligence for sales teams',
+  description:
+    'Turn recorded sales calls into qualified leads, explained scores and a '
+    + 'prioritised follow-up list. Every score links back to the transcript.',
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  // Both schemes are designed, so let the OS pick.
+  colorScheme: 'light dark',
 };
 
 export default function RootLayout({
@@ -20,17 +23,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
-          rel="stylesheet"
-        />
-      </head>
-      <body className="antialiased">
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

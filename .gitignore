@@ -1,24 +1,33 @@
+# Python
 __pycache__/
 *.py[cod]
-*.pyo
 *.egg-info/
-.env
-.env.*
-.DS_Store
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Node
 node_modules/
 .next/
-coverage/
-htmlcov/
-.cache/
-.mypy_cache/
-.pytest_cache/
-models/
-*.log
+out/
+*.tsbuildinfo
+
+# Application data — transcripts and analyses are customer data.
+data/
+*.db
 *.sqlite3
-frontend/.vercel/
-frontend/.turbo/
-frontend/.next/
-frontend/out/
-backend/venv/
-backend/.venv/
-backend/lambda_package/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store

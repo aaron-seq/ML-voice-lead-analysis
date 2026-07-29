@@ -1,74 +1,60 @@
-[build-system]
-requires = ["setuptools>=45", "wheel"]
-build-backend = "setuptools.build_meta"
+[project]
+name = "callsense"
+version = "1.0.0"
+description = "Call intelligence for sales teams — explainable lead scoring from call transcripts"
+readme = "../README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
 
-[tool.black]
-line-length = 88
-target-version = ['py311']
-include = '\.pyi?$'
-exclude = '''
-(
-  /(
-      \.eggs
-    | \.git
-    | \.hg
-    | \.mypy_cache
-    | \.tox
-    | \.venv
-    | _build
-    | buck-out
-    | build
-    | dist
-    | migrations
-    | alembic
-  )/
-)
-'''
+[project.scripts]
+callsense = "app.cli.main:main"
 
-[tool.isort]
-profile = "black"
-line_length = 88
-multi_line_output = 3
-include_trailing_comma = true
-force_grid_wrap = 0
-use_parentheses = true
-ensure_newline_before_comments = true
-src_paths = [".", "tests"]
+[tool.ruff]
+line-length = 90
+target-version = "py311"
+src = ["."]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",    # pycodestyle
+    "F",         # pyflakes
+    "I",         # import sorting
+    "UP",        # pyupgrade
+    "B",         # bugbear
+    "SIM",       # simplify
+    "C4",        # comprehensions
+    "RUF",       # ruff-specific
+]
+ignore = [
+    "B008",      # FastAPI's Depends() in defaults is the documented idiom
+    "RUF012",    # ClassVar annotations not required for pydantic models
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests may use assert, long fixture strings, and re-import fixtures.
+"tests/**" = ["E501"]
+# The lexicons are hand-formatted data tables. A whitespace-split word list is
+# far easier to review and extend than a 200-element list literal, and the
+# compact (phrase, weight) tuples keep each category readable at a glance.
+"app/analysis/lexicons.py" = ["SIM905"]
 
 [tool.mypy]
+plugins = ["pydantic.mypy"]
 python_version = "3.11"
-warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
-check_untyped_defs = true
-disallow_untyped_decorators = false
-no_implicit_optional = true
 warn_redundant_casts = true
-warn_unused_ignores = true
-warn_no_return = true
-warn_unreachable = true
-strict_equality = true
+no_implicit_optional = true
+check_untyped_defs = true
+# Not strict everywhere yet: the API layer leans on FastAPI's runtime
+# injection, which mypy cannot follow without heavy annotation noise.
+# The engine and domain are the parts worth guarding, and they are strict.
 ignore_missing_imports = true
 
-[tool.coverage.run]
-source = "."
-omit = [
-    "*/tests/*",
-    "*/venv/*",
-    "*/migrations/*",
-    "*/alembic/*",
-    "setup.py"
-]
-branch = true
+[[tool.mypy.overrides]]
+module = ["app.analysis.*", "app.domain.*"]
+disallow_untyped_defs = true
+warn_return_any = true
 
-[tool.coverage.report]
-exclude_lines = [
-    "pragma: no cover",
-    "def __repr__",
-    "raise AssertionError",
-    "raise NotImplementedError",
-    "if __name__ == .__main__.:"
-]
-show_missing = true
-fail_under = 80
+[[tool.mypy.overrides]]
+module = ["app.api.*", "app.cli.*"]
+ignore_errors = true

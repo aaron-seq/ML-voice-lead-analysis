@@ -1,0 +1,17 @@
+Rep: Hi Sarah, thanks for taking the time. I'm calling from Northwind about the data pipeline tooling.
+Prospect: Sure, we've got fifteen minutes. What is it you do exactly?
+Rep: We help data teams cut the time they spend maintaining ingestion pipelines. Can I ask what your current process looks like?
+Prospect: Honestly it's a mess. We're struggling with a completely manual process, three engineers babysitting cron jobs. It's costing us probably two days a week.
+Rep: That's really common. How long has that been going on?
+Prospect: About a year. It's become a top priority now because we're going live with a new product in March and it doesn't scale.
+Rep: Understood. Let me walk you through how we'd approach that.
+Prospect: Before that, what's the pricing look like? We have budget allocated for tooling this quarter but I need to know the range.
+Rep: Sure, it depends on volume. Most teams your size land between forty and sixty thousand a year.
+Prospect: Okay, that's within our budget. That's not unreasonable at all. Does it integrate with Snowflake?
+Rep: It does, natively. We also support SSO and we're SOC 2 Type II compliant.
+Prospect: This is exactly what we need. I love that it handles the backfills automatically.
+Prospect: One thing though, I'll need to run it by our VP of Engineering. It's not entirely my decision.
+Rep: Of course. Would it help if I joined that conversation? I can put together something focused on his priorities.
+Prospect: That would actually be great. Can we set up a call next week? I'll send you some times.
+Rep: Perfect, I'll send an invite over today with an agenda.
+Prospect: Great, looking forward to it.
