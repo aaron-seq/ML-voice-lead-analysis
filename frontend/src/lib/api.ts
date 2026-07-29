@@ -1,211 +1,196 @@
-import axios, { AxiosResponse } from 'axios';
+/**
+ * Typed API client.
+ *
+ * One place that knows the wire format. Errors are normalised into `ApiError`
+ * so components can render `error.message` without unwrapping a fetch failure,
+ * an HTTP status and a JSON error body separately.
+ */
 
-// Types
-export interface CallSummary {
-  file_name: string;
-  created_at?: string;
-  file_size?: number;
-  lead_score?: string;
+import type {
+  CallAnalysis,
+  CallDetail,
+  CallFilters,
+  CallSummaryRow,
+  Paginated,
+  PipelineAnalytics,
+  Transcript,
+} from './types';
+
+const BASE_URL = (
+  process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+).replace(/\/$/, '');
+
+const API_PREFIX = '/api/v1';
+
+/** Set when the deployment has AUTH_ENABLED=true. */
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? '';
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code: string = 'error',
+    readonly context: Record<string, unknown> = {},
+    readonly requestId: string | null = null,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+
+  /** True for errors the user can fix by changing their input. */
+  get isUserError(): boolean {
+    return this.status >= 400 && this.status < 500;
+  }
 }
 
-export interface LeadScoreDetails {
-  score: string;
-  confidence: number;
-  reasoning?: string;
+interface RequestOptions extends RequestInit {
+  /** Abort the request after this many milliseconds. */
+  timeoutMs?: number;
 }
 
-export interface HighInterestMoment {
-  keyword: string;
-  context: string;
-  timestamp?: number;
-  sentiment_score?: number;
+async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const { timeoutMs = 30_000, headers, ...rest } = options;
+
+  // Without a timeout a hung backend leaves the UI spinning forever.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  const requestHeaders: Record<string, string> = { ...(headers as object) };
+  if (API_KEY) requestHeaders['X-API-Key'] = API_KEY;
+
+  let response: Response;
+  try {
+    response = await fetch(`${BASE_URL}${path}`, {
+      ...rest,
+      headers: requestHeaders,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new ApiError('The request timed out.', 0, 'timeout');
+    }
+    throw new ApiError(
+      `Could not reach the API at ${BASE_URL}. Is the backend running?`,
+      0,
+      'network_error',
+    );
+  }
+  clearTimeout(timer);
+
+  if (response.status === 204) return undefined as T;
+
+  const requestId = response.headers.get('X-Request-ID');
+
+  if (!response.ok) {
+    let code = `http_${response.status}`;
+    let message = response.statusText || 'Request failed';
+    let context: Record<string, unknown> = {};
+    try {
+      const body = await response.json();
+      code = body.code ?? code;
+      message = body.message ?? message;
+      context = body.context ?? {};
+    } catch {
+      // Non-JSON error body (a proxy error page, say). Keep the status text.
+    }
+    throw new ApiError(message, response.status, code, context, requestId);
+  }
+
+  return (await response.json()) as T;
 }
 
-export interface CallAnalysisResult {
-  file_name: string;
-  transcript: string;
-  sentiment_score: number;
-  key_phrases: string[];
-  discussion_topics: string[];
-  high_interest_moments: HighInterestMoment[];
-  lead_classification: LeadScoreDetails;
-  call_duration?: number;
-  participant_count?: number;
+function buildQuery(filters: CallFilters): string {
+  const params = new URLSearchParams();
+  if (filters.search) params.set('search', filters.search);
+  // Repeated key, not a comma list — matches FastAPI's list query parsing.
+  filters.band?.forEach((b) => params.append('band', b));
+  if (filters.owner) params.set('owner', filters.owner);
+  if (filters.min_score !== undefined) {
+    params.set('min_score', String(filters.min_score));
+  }
+  if (filters.sort_by) params.set('sort_by', filters.sort_by);
+  if (filters.sort_desc !== undefined) {
+    params.set('sort_desc', String(filters.sort_desc));
+  }
+  params.set('page', String(filters.page ?? 1));
+  params.set('page_size', String(filters.page_size ?? 20));
+  return params.toString();
 }
 
-export interface CallListResponse {
-  success: boolean;
-  calls: CallSummary[];
-  total_count: number;
-  page: number;
-  page_size: number;
-  has_next: boolean;
-  message?: string;
-}
-
-export interface ApiError {
-  success: false;
-  message: string;
-  error_code?: number;
-}
-
-// Configuration
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-const API_VERSION = 'v1';
-
-// Create axios instance
-const apiClient = axios.create({
-  baseURL: `${API_BASE_URL}/${API_VERSION}`,
-  timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json',
+export const api = {
+  listCalls(filters: CallFilters = {}): Promise<Paginated<CallSummaryRow>> {
+    return request(`${API_PREFIX}/calls?${buildQuery(filters)}`);
   },
-});
 
-// Request interceptor
-apiClient.interceptors.request.use(
-  (config) => {
-    // Add auth token if available
-    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
+  getCall(id: string, includeTranscript = false): Promise<CallDetail> {
+    return request(
+      `${API_PREFIX}/calls/${encodeURIComponent(id)}` +
+        `?include_transcript=${includeTranscript}`,
+    );
   },
-  (error) => Promise.reject(error)
-);
 
-// Response interceptor
-apiClient.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      // Handle unauthorized access
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('auth_token');
-        // Redirect to login if needed
-      }
-    }
-    return Promise.reject(error);
-  }
-);
+  createCall(payload: {
+    title: string;
+    transcript: string;
+    owner?: string;
+    tags?: string[];
+  }): Promise<CallDetail> {
+    return request(`${API_PREFIX}/calls`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      timeoutMs: 60_000,
+    });
+  },
 
-// API Functions
-export class VoiceAnalysisAPI {
-  
-  /**
-   * Fetch paginated list of analyzed calls
-   */
-  static async getCallsList(params: {
-    page?: number;
-    page_size?: number;
-  } = {}): Promise<CallListResponse> {
-    try {
-      const response: AxiosResponse<CallListResponse> = await apiClient.get('/calls', {
-        params: {
-          page: params.page || 1,
-          page_size: params.page_size || 20,
-        },
-      });
-      
-      return response.data;
-    } catch (error: any) {
-      console.error('Failed to fetch calls list:', error);
-      throw new Error(
-        error.response?.data?.message || 'Failed to fetch calls list'
-      );
-    }
-  }
+  uploadCall(file: File, title?: string, owner?: string): Promise<CallDetail> {
+    const form = new FormData();
+    form.append('file', file);
+    if (title) form.append('title', title);
+    if (owner) form.append('owner', owner);
+    // Content-Type is omitted deliberately: the browser must set the
+    // multipart boundary itself.
+    return request(`${API_PREFIX}/calls/upload`, {
+      method: 'POST',
+      body: form,
+      timeoutMs: 120_000,
+    });
+  },
 
-  /**
-   * Fetch detailed analysis for a specific call
-   */
-  static async getCallAnalysis(fileName: string): Promise<CallAnalysisResult> {
-    try {
-      const response: AxiosResponse<CallAnalysisResult> = await apiClient.get(
-        `/calls/${encodeURIComponent(fileName)}`
-      );
-      
-      return response.data;
-    } catch (error: any) {
-      console.error(`Failed to fetch analysis for ${fileName}:`, error);
-      throw new Error(
-        error.response?.data?.message || `Failed to fetch analysis for ${fileName}`
-      );
-    }
-  }
-
-  /**
-   * Trigger re-analysis of a call
-   */
-  static async triggerReanalysis(fileName: string): Promise<{ success: boolean; message: string }> {
-    try {
-      const response = await apiClient.post(
-        `/calls/${encodeURIComponent(fileName)}/reanalyze`
-      );
-      
-      return response.data;
-    } catch (error: any) {
-      console.error(`Failed to trigger reanalysis for ${fileName}:`, error);
-      throw new Error(
-        error.response?.data?.message || `Failed to trigger reanalysis for ${fileName}`
-      );
-    }
-  }
-
-  /**
-   * Health check endpoint
-   */
-  static async healthCheck(): Promise<{
-    success: boolean;
-    version: string;
-    environment: string;
-    aws_connection: boolean;
+  analyseOnly(transcript: string): Promise<{
+    analysis: CallAnalysis;
+    transcript: Transcript;
   }> {
-    try {
-      const response = await apiClient.get('/health');
-      return response.data;
-    } catch (error: any) {
-      console.error('Health check failed:', error);
-      throw new Error('Health check failed');
-    }
-  }
+    return request(`${API_PREFIX}/calls/analyse`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transcript }),
+      timeoutMs: 60_000,
+    });
+  },
 
-  /**
-   * Search calls (if implemented on backend)
-   */
-  static async searchCalls(query: string, filters?: {
-    lead_score?: string;
-    sentiment?: string;
-    date_range?: string;
-  }): Promise<CallListResponse> {
-    try {
-      const response: AxiosResponse<CallListResponse> = await apiClient.get('/calls/search', {
-        params: {
-          q: query,
-          ...filters,
-        },
-      });
-      
-      return response.data;
-    } catch (error: any) {
-      console.error('Search failed:', error);
-      throw new Error(
-        error.response?.data?.message || 'Search failed'
-      );
-    }
-  }
-}
+  reanalyse(id: string): Promise<CallDetail> {
+    return request(`${API_PREFIX}/calls/${encodeURIComponent(id)}/reanalyse`, {
+      method: 'POST',
+      timeoutMs: 60_000,
+    });
+  },
 
-// Hook-friendly exports for React Query
-export const voiceAnalysisQueries = {
-  all: ['voice-analysis'] as const,
-  calls: () => [...voiceAnalysisQueries.all, 'calls'] as const,
-  callsList: (params: { page?: number; page_size?: number }) => 
-    [...voiceAnalysisQueries.calls(), 'list', params] as const,
-  callAnalysis: (fileName: string) => 
-    [...voiceAnalysisQueries.calls(), 'analysis', fileName] as const,
+  deleteCall(id: string): Promise<void> {
+    return request(`${API_PREFIX}/calls/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  },
+
+  analytics(days = 30): Promise<PipelineAnalytics> {
+    return request(`${API_PREFIX}/analytics/pipeline?days=${days}`);
+  },
+
+  exportCsvUrl(filters: CallFilters = {}): string {
+    const params = new URLSearchParams();
+    filters.band?.forEach((b) => params.append('band', b));
+    if (filters.owner) params.set('owner', filters.owner);
+    return `${BASE_URL}${API_PREFIX}/export/calls.csv?${params.toString()}`;
+  },
 };
-
-// Default export
-export default VoiceAnalysisAPI;

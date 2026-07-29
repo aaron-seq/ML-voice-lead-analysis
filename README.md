@@ -1,478 +1,256 @@
-# ML Voice Lead Analysis Platform
+# CallSense
 
-**Next-Generation AI-Powered Sales Call Analysis System**
+**Turn recorded sales calls into qualified leads, explained scores, and a prioritised follow-up list.**
 
-Transform your sales conversations into actionable insights with advanced ML, real-time sentiment analysis, and intelligent lead scoring. Built with modern architecture for enterprise scalability and cloud deployment.
+Upload a call transcript. Get back a lead score you can argue with, the objections
+your rep did not answer, and the three things to do before tomorrow.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/aaron-seq/ML-voice-lead-analysis/actions/workflows/ci.yml/badge.svg)](https://github.com/aaron-seq/ML-voice-lead-analysis/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.104.1-009688.svg)](https://fastapi.tiangolo.com)
-[![Next.js](https://img.shields.io/badge/Next.js-14.0.4-black.svg)](https://nextjs.org/)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg)](https://www.docker.com/)
-
-## Features Overview
-
-### Advanced AI Analysis
-- **Multi-Model Sentiment Analysis** - Ensemble approach with VADER, TextBlob, and Transformers
-- **Intelligent Lead Scoring** - AI-powered classification with confidence metrics
-- **Topic Extraction** - Automatic identification of conversation themes
-- **Interest Detection** - High-engagement moment identification
-- **Speaker Profiling** - Role identification and engagement analysis
-
-### Modern Dashboard
-- **Real-time Analytics** - Live processing status and performance metrics
-- **Interactive Visualizations** - Responsive charts and data exploration
-- **Advanced Filtering** - Multi-criteria search and sorting capabilities
-- **Export Capabilities** - PDF reports and structured data export
-- **Mobile Responsive** - Optimized for all device types
-
-### Enterprise Architecture
-- **Cloud-Native Design** - AWS, Azure, GCP compatible
-- **Microservices Architecture** - Scalable and maintainable components
-- **Container-Ready** - Docker and Kubernetes deployment support
-- **API-First Design** - RESTful APIs with comprehensive documentation
-- **Security Hardened** - Enterprise-grade security practices
-
-## Quick Start Guide
-
-### Prerequisites
-
-**System Requirements:**
-- Python 3.11+
-- Node.js 18.0+
-- Docker & Docker Compose (recommended)
-- Git
-
-**Required Services:**
-- AWS Account (for S3 and optional Transcribe)
-- OpenAI API Key (optional, for enhanced analysis)
-
-### Installation Methods
-
-#### Option A: Docker Compose (Recommended)
-
-```bash
-# Clone the repository
-git clone https://github.com/aaron-seq/ML-voice-lead-analysis.git
-cd ML-voice-lead-analysis
-
-# Configure environment
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env.local
-
-# Edit configuration files with your settings
-# nano backend/.env
-# nano frontend/.env.local
-
-# Start all services
-docker-compose up --build
-
-# Access the application:
-# Frontend: http://localhost:3000
-# Backend API: http://localhost:8000
-# API Documentation: http://localhost:8000/v1/docs
-```
-
-#### Option B: Manual Development Setup
-
-```bash
-# Backend setup
-cd backend
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-python -m spacy download en_core_web_md
-
-# Frontend setup (new terminal)
-cd frontend
-npm install
-
-# Start services
-# Terminal 1 - Backend
-cd backend
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-
-# Terminal 2 - Frontend  
-cd frontend
-npm run dev
-```
-
-### Configuration
-
-#### Backend Configuration (`backend/.env`)
-
-```env
-# Application Settings
-ENVIRONMENT=development
-DEBUG=true
-PORT=8000
-
-# AWS Configuration
-AWS_REGION=us-east-1
-DATA_BUCKET=your-s3-bucket-name
-AWS_ACCESS_KEY_ID=your_access_key
-AWS_SECRET_ACCESS_KEY=your_secret_key
-
-# Database (choose one)
-DATABASE_URL=sqlite+aiosqlite:///./voice_analysis.db
-# DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/voice_analysis
-
-# Security
-SECRET_KEY=your-super-secret-key-minimum-32-characters
-
-# ML Configuration
-USE_TRANSFORMERS=false  # Set to true for enhanced analysis
-CLOUD_DEPLOYMENT=false  # Set to true for cloud optimization
-```
-
-#### Frontend Configuration (`frontend/.env.local`)
-
-```env
-# API Configuration
-NEXT_PUBLIC_API_URL=http://localhost:8000
-NEXT_PUBLIC_APP_NAME=ML Voice Lead Analysis
-NEXT_PUBLIC_VERSION=3.1.0
-
-# Environment
-NODE_ENV=development
-NEXT_TELEMETRY_DISABLED=1
-```
-
-## Architecture Overview
-
-```mermaid
-graph TB
-    A[Frontend Dashboard<br/>React/Next.js] --> B[API Gateway<br/>FastAPI]
-    B --> C[Analysis Service<br/>ML Pipeline]
-    B --> D[AWS S3<br/>File Storage]
-    B --> E[Database<br/>PostgreSQL/SQLite]
-    B --> F[Cache<br/>Redis]
-    C --> G[NLP Models<br/>spaCy, Transformers]
-    C --> H[Sentiment Analysis<br/>Multi-model Ensemble]
-    C --> I[Lead Scoring<br/>AI Classification]
-```
-
-### Key Components
-
-- **Frontend**: Modern React with TypeScript, Tailwind CSS, and Next.js
-- **Backend**: FastAPI with async processing, SQLAlchemy ORM, structured logging
-- **ML Pipeline**: Advanced NLP with spaCy, TensorFlow, Transformers
-- **Storage**: AWS S3 for files, PostgreSQL for data, Redis for caching
-- **Infrastructure**: Docker containers, cloud deployment ready
-
-## Usage Guide
-
-### Processing Your First Call
-
-1. **Upload Audio Transcript** to your S3 bucket:
-   ```
-   s3://your-bucket/transcripts/sample-call.json
-   ```
-
-2. **Run Analysis Pipeline**:
-   ```bash
-   cd pipeline
-   python voice_analysis_pipeline.py transcripts/sample-call.json
-   ```
-
-3. **View Results** in the dashboard at `http://localhost:3000`
-
-### API Usage Examples
-
-#### Get Call Listings
-```python
-import requests
-
-# Retrieve paginated call list
-response = requests.get(
-    "http://localhost:8000/v1/calls",
-    params={"page": 1, "page_size": 10, "sort_field": "upload_timestamp"}
-)
-calls = response.json()
-
-print(f"Found {calls['pagination']['total_items']} calls")
-```
-
-#### Get Detailed Analysis
-```python
-# Get comprehensive analysis
-response = requests.get("http://localhost:8000/v1/calls/sample-call.json")
-analysis = response.json()
-
-print(f"Lead Score: {analysis['lead_score_details']['primary_classification']}")
-print(f"Sentiment: {analysis['sentiment_score']:.2f}")
-print(f"Key Topics: {', '.join(analysis['extracted_topics'])}")
-```
-
-#### Trigger Reprocessing
-```python
-# Reprocess with latest models
-response = requests.post("http://localhost:8000/v1/calls/sample-call.json/reprocess")
-result = response.json()
-
-print(f"Status: {result['status']}")
-print(f"Processing ID: {result['processing_id']}")
-```
-
-## Cloud Deployment
-
-### Vercel Deployment (Frontend + Serverless Backend)
-
-```bash
-# Install Vercel CLI
-npm i -g vercel
-
-# Configure environment variables in Vercel dashboard:
-# - AWS_ACCESS_KEY_ID
-# - AWS_SECRET_ACCESS_KEY
-# - S3_BUCKET_NAME
-# - SECRET_KEY
-
-# Deploy
-vercel --prod
-```
-
-### Render Deployment
-
-1. **Backend Service**:
-   - Connect your GitHub repository
-   - Set build command: `pip install -r backend/requirements.txt`
-   - Set start command: `cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT`
-   - Add environment variables
-
-2. **Frontend Service**:
-   - Set build command: `cd frontend && npm install && npm run build`
-   - Set start command: `cd frontend && npm start`
-   - Add environment variables
-
-### Railway Deployment
-
-```bash
-# Install Railway CLI
-npm install -g @railway/cli
-
-# Login and deploy
-railway login
-railway link
-railway up
-```
-
-### AWS Lambda Deployment
-
-```bash
-# Package backend for Lambda
-cd backend
-pip install -r requirements.txt -t lambda_package/
-cp -r . lambda_package/
-cd lambda_package && zip -r ../lambda_deployment.zip .
-
-# Deploy using AWS CLI or Console
-aws lambda update-function-code \
-  --function-name ml-voice-analysis \
-  --zip-file fileb://lambda_deployment.zip
-```
-
-### Docker Production Deployment
-
-```bash
-# Build production images
-docker-compose -f docker-compose.yml build
-
-# Deploy with production settings
-ENVIRONMENT=production \
-SECRET_KEY=your-production-secret \
-AWS_ACCESS_KEY_ID=your-key \
-AWS_SECRET_ACCESS_KEY=your-secret \
-docker-compose up -d
-```
-
-## Development
-
-### Running Tests
-
-```bash
-# Backend tests
-cd backend
-pytest tests/ -v --coverage
-
-# Frontend tests
-cd frontend
-npm test
-
-# Integration tests
-docker-compose -f docker-compose.test.yml up --abort-on-container-exit
-```
-
-### Code Quality
-
-```bash
-# Backend formatting and linting
-cd backend
-black .
-isort .
-flake8 .
-mypy .
-
-# Frontend formatting and linting
-cd frontend
-npm run lint
-npm run format
-npm run type-check
-```
-
-### Performance Monitoring
-
-Monitor application performance through:
-- **Health Check**: `GET /health`
-- **Performance Metrics**: `GET /v1/analytics/performance`
-- **System Info**: `GET /v1/system/info`
-
-## Security
-
-### Security Features
-- JWT-based authentication support
-- Input validation and sanitization
-- SQL injection prevention
-- CORS configuration
-- Rate limiting ready
-- Container security best practices
-
-### Security Configuration
-
-```env
-# Strong secret key (32+ characters)
-SECRET_KEY=your-cryptographically-secure-secret-key
-
-# Database connection with SSL
-DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/db?ssl=require
-
-# CORS origins (production)
-CORS_ORIGINS=https://yourdomain.com,https://api.yourdomain.com
-```
-
-## Performance Optimization
-
-### Backend Optimizations
-- Async/await for all I/O operations
-- Connection pooling for databases
-- Multi-layer caching with Redis
-- Request batching and pagination
-- Background task processing
-
-### Frontend Optimizations
-- Code splitting and lazy loading
-- Image optimization with Next.js
-- Bundle analysis and optimization
-- Performance monitoring
-- CDN-ready static assets
-
-### ML Pipeline Optimizations
-- Model caching and reuse
-- Batch processing capabilities
-- Memory-efficient processing
-- GPU acceleration support (optional)
-- Lightweight models for cloud deployment
-
-## Troubleshooting
-
-### Common Issues
-
-#### Backend Won't Start
-```bash
-# Check Python version
-python --version  # Should be 3.11+
-
-# Verify dependencies
-pip install -r requirements.txt
-
-# Download spaCy model
-python -m spacy download en_core_web_md
-
-# Check environment variables
-cat backend/.env
-```
-
-#### Frontend Build Fails
-```bash
-# Clear cache and reinstall
-npm cache clean --force
-rm -rf node_modules package-lock.json
-npm install
-
-# Check Node version
-node --version  # Should be 18+
-```
-
-#### AWS Connection Issues
-```bash
-# Verify AWS credentials
-aws sts get-caller-identity
-
-# Test S3 access
-aws s3 ls s3://your-bucket-name
-
-# Check bucket permissions
-aws s3api get-bucket-policy --bucket your-bucket-name
-```
-
-### Performance Issues
-
-- **Slow API Response**: Check database query performance, Redis cache hit rates
-- **High Memory Usage**: Adjust ML model batch sizes, implement model unloading
-- **Container Issues**: Monitor resource limits, check container logs
-
-### Getting Help
-
-- 📖 **Documentation**: Comprehensive guides and API docs
-- 🐛 **Issues**: [GitHub Issues](https://github.com/aaron-seq/ML-voice-lead-analysis/issues)
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/aaron-seq/ML-voice-lead-analysis/discussions)
-- 📧 **Contact**: [aaronsequeira12@gmail.com](mailto:aaronsequeira12@gmail.com)
-
-## Contributing
-
-### Development Workflow
-
-1. **Fork the repository**
-2. **Create feature branch**: `git checkout -b feature/amazing-feature`
-3. **Make changes** with comprehensive tests
-4. **Run test suite**: `npm test` and `pytest`
-5. **Commit changes**: `git commit -m 'feat: add amazing feature'`
-6. **Push to branch**: `git push origin feature/amazing-feature`
-7. **Open Pull Request**
-
-### Code Standards
-
-- **Python**: Black formatting, isort imports, flake8 linting, type hints
-- **TypeScript**: Prettier formatting, ESLint, strict type checking
-- **Commit Messages**: Conventional Commits format
-- **Documentation**: Comprehensive docstrings and README updates
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- **spaCy Team** for excellent NLP libraries
-- **FastAPI** for the modern Python web framework  
-- **Next.js Team** for the powerful React framework
-- **Vercel** for seamless deployment platform
-- **Open Source Community** for incredible tools and libraries
-
-## Project Statistics
-
-- **Lines of Code**: 20,000+
-- **Test Coverage**: 90%+
-- **API Endpoints**: 25+
-- **ML Models**: 5+ integrated
-- **Deployment Platforms**: 8+ supported
-- **Processing Speed**: ~2-3 minutes per call
-- **Accuracy**: 85%+ lead scoring accuracy
 
 ---
 
-**Built with ❤️ by [Aaron Sequeira](https://github.com/aaron-seq)**
+## The problem
 
-⭐ **Star this repo** | 🐛 **Report Bug** | ✨ **Request Feature**
+A sales team runs 200 calls a week. The CRM records that the calls happened.
+Nobody can answer:
 
-*Transform your sales conversations into actionable insights with enterprise-grade AI analysis.*
+- Which of last week's calls are actually worth chasing?
+- Which prospects raised an objection that never got answered?
+- Which reps talk for 80% of a discovery call?
+- Why is this lead marked "hot"?
+
+Conversation-intelligence tools answer some of this, cost $100+/seat/month, and
+require sending every customer conversation to a third party. CallSense is the
+self-hosted alternative: it runs on your own infrastructure, on transcripts you
+already have, with no per-seat cost and no data leaving your network.
+
+## What it does
+
+| Capability | What you get |
+|---|---|
+| **Explainable lead scoring** | 0-100 score with every weighted component shown, plus the transcript quote behind each one |
+| **Objection detection** | 7 objection types, flagged as **addressed** or **unaddressed**, each with playbook guidance |
+| **Buyer intent signals** | 10 signal types mapped to BANT/MEDDIC, attributed to *who said it* |
+| **Call outcome classification** | Meeting booked, follow-up agreed, not interested, gatekeeper-only, … |
+| **Next-best-action** | Prioritised, time-boxed, with the reason it was suggested |
+| **Deal risk flags** | No decision maker, no next step, budget unconfirmed, rep monologue, cooling sentiment |
+| **Conversation metrics** | Talk ratio, question counts, sentiment trajectory across the call |
+| **Pipeline analytics** | Band distribution, recurring objections, team-wide coaching signals |
+| **Export** | One-row-per-call CSV for your CRM or spreadsheet |
+
+### Every score is explainable
+
+This is the design constraint everything else follows from. A score a rep cannot
+interrogate is a score they will ignore the first time it disagrees with them.
+
+```
+  SCORE BREAKDOWN
+    need          20.0/20    ████████████████████ Matched "we're struggling with" (prospect)
+    next_step     16.2/18    ██████████████████   Matched "set up a call" (prospect)
+    budget        15.0/15    ████████████████████ Matched "we have budget" (prospect)
+    authority      6.5/13    ██████████           Matched "our vp" (prospect)
+    timeline      11.5/12    ███████████████████  Matched "this quarter" (prospect)
+    engagement     7.5/12    ████████████         Prospect spoke 56% of words, asked 2 questions
+    sentiment      7.2/10    ██████████████       Prospect sentiment +0.30, trend +0.45
+    no_decision_maker -10.0                       Decision-making authority was not established
+    ────────────────────────────────────────────────────────────────────
+    TOTAL         73.9/100   HOT   (confidence 77%)
+```
+
+Click any component in the dashboard to see the exact quotes behind it.
+
+![Call detail](docs/images/call-detail.png)
+
+![Pipeline analytics](docs/images/pipeline.png)
+
+---
+
+## Quick start
+
+**Requirements:** Python 3.11+. That's it — no AWS account, no database server,
+no model download, no GPU.
+
+```bash
+git clone https://github.com/aaron-seq/ML-voice-lead-analysis.git
+cd ML-voice-lead-analysis/backend
+
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+
+# Analyse a call from the command line — no server needed
+python -m app.cli.main analyse ../examples/transcripts/northwind-discovery.txt
+```
+
+Load the example calls and start the API:
+
+```bash
+python -m app.cli.main import ../examples/transcripts
+uvicorn app.main:app --reload
+```
+
+- API: <http://localhost:8000>
+- Interactive docs: <http://localhost:8000/api/v1/docs>
+- Health: <http://localhost:8000/health/ready>
+
+The dashboard, in a second terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev     # http://localhost:3000
+```
+
+### Docker
+
+```bash
+docker compose up --build
+```
+
+Brings up the API, the dashboard, and PostgreSQL. See
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+---
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[Transcript<br/>txt · json · vtt · srt] --> B[Parser<br/>format auto-detected]
+    B --> C[Role inference<br/>who is the rep?]
+    C --> D[Analyzers]
+    D --> D1[Sentiment]
+    D --> D2[Signals]
+    D --> D3[Objections]
+    D --> D4[Outcome]
+    D1 & D2 & D3 & D4 --> E[Lead score<br/>weighted rubric]
+    E --> F[Next actions]
+    F --> G[(SQLite / Postgres)]
+    G --> H[REST API]
+    H --> I[Dashboard]
+    H --> J[CSV export]
+```
+
+**Transcript formats** are detected from content, not file extension: AWS
+Transcribe, OpenAI Whisper, WebVTT, SRT, diarised plain text (`Rep: hello`), and
+undiarised prose.
+
+**Role inference** decides which speaker is selling. It matters more than it
+sounds: "we have budget" from the prospect is a qualification signal; the same
+words from the rep are a script line. When the evidence is weak the engine
+reports `unknown` and scores conservatively rather than guessing.
+
+**The analysis engine is pure Python** — no spaCy, no PyTorch, no transformers on
+the default path. It is deterministic (the same transcript always produces the
+same score), runs in ~3 ms per call, and every finding carries the transcript span
+that produced it. A transformer sentiment analyzer is available as an opt-in
+upgrade (`ENABLE_TRANSFORMER_SENTIMENT=true`).
+
+Full detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+---
+
+## Honest limitations
+
+Read this before deciding whether CallSense fits your team.
+
+- **The lead score is a documented rubric, not a trained model.** The weights in
+  [`scoring.py`](backend/app/analysis/scoring.py) encode standard sales
+  qualification practice. They have **not** been validated against conversion
+  outcomes, because this project ships with no labelled dataset. Treat the score
+  as a consistent, explainable prioritisation heuristic — not a probability.
+  When you have outcome data, `python -m app.cli.main evaluate labelled.csv`
+  reports AUC and per-band conversion rates so you can tune the weights against
+  your own funnel. See [docs/SCORING.md](docs/SCORING.md).
+- **English only.** The lexicons are English; other languages parse but score
+  meaninglessly.
+- **Lexicon-based detection has real recall limits.** Novel phrasings are missed.
+  The trade-off is deliberate: precision over recall, and total explainability.
+- **No audio pipeline.** CallSense analyses transcripts. Bring your own ASR
+  (Whisper, AWS Transcribe, your dialer's export).
+- **Auth is static API keys with three roles.** Adequate for a single team behind
+  a VPN; it is not multi-tenant SSO. See [docs/SECURITY.md](docs/SECURITY.md).
+- **Speaker-role inference is heuristic**, roughly reliable on two-party calls
+  and weak on multi-party ones.
+
+---
+
+## Documentation
+
+| Document | Contents |
+|---|---|
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Component map, data flow, design decisions and their trade-offs |
+| [API.md](docs/API.md) | Full endpoint reference with examples |
+| [SCORING.md](docs/SCORING.md) | The rubric: every weight, threshold and risk flag, and how to tune them |
+| [CONFIGURATION.md](docs/CONFIGURATION.md) | Every environment variable |
+| [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Docker, Postgres, S3, reverse proxy, production checklist |
+| [SECURITY.md](docs/SECURITY.md) | Auth model, threat model, what is and is not protected |
+| [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Common failures and their fixes |
+| [ROADMAP.md](docs/ROADMAP.md) | Where this is going, in phases |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Dev setup, tests, how to extend the lexicons |
+
+---
+
+## CLI
+
+```bash
+callsense analyse call.txt              # analyse one transcript, print a report
+callsense analyse call.txt --json       # machine-readable output
+callsense import ./transcripts          # bulk-load a directory
+callsense evaluate labelled_calls.csv   # validate the rubric against outcomes
+callsense keygen --role analyst         # mint an API key
+callsense serve                         # run the API
+```
+
+(Or `python -m app.cli.main <command>` without installing the package.)
+
+## API at a glance
+
+```bash
+# Analyse without storing anything
+curl -X POST localhost:8000/api/v1/calls/analyse \
+     -H 'Content-Type: application/json' \
+     -d '{"transcript": "Rep: Hi...\nProspect: We have budget for this."}'
+
+# Ingest a file
+curl -X POST localhost:8000/api/v1/calls/upload -F file=@call.txt
+
+# The hot leads, newest first
+curl 'localhost:8000/api/v1/calls?band=hot&sort_by=created_at'
+
+# Team analytics
+curl localhost:8000/api/v1/analytics/pipeline
+```
+
+Full reference: [docs/API.md](docs/API.md).
+
+## Development
+
+```bash
+cd backend
+pip install -r requirements-dev.txt
+
+pytest                        # 159 tests
+ruff check app tests          # lint
+mypy app                      # types
+
+cd ../frontend
+npm run type-check && npm run build
+```
+
+The test suite runs against the real engine, a real database and real storage —
+nothing is mocked. `tests/integration/test_contract.py` enforces that an analysis
+produced by the engine round-trips through storage and the API unchanged, and
+that every field the dashboard reads still exists.
+
+## Contributing
+
+Issues and pull requests welcome. The highest-value contribution is
+**lexicon coverage**: if CallSense misses a phrase your team actually uses, add it
+to [`lexicons.py`](backend/app/analysis/lexicons.py) with a test. See
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+MIT — see [LICENSE](LICENSE).

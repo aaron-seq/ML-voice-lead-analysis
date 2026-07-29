@@ -1,0 +1,7 @@
+Rep: Hi Mark, this is Priya from Northwind, calling about data pipeline tooling.
+Prospect: Look, I'm not interested. We already have something that works fine.
+Rep: I appreciate that. Could I ask what you're using currently?
+Prospect: We just signed with another vendor last month. We're locked into a two year contract.
+Rep: Understood. Would it be worth a conversation closer to renewal?
+Prospect: Honestly, please take me off your list. Don't call again.
+Rep: Of course. Apologies for the interruption.

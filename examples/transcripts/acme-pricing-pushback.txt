@@ -1,0 +1,15 @@
+Rep: Morning Daniel, thanks for making time. I wanted to follow up on the deck I sent over.
+Prospect: Yeah I had a look. It's interesting, but I'll be honest with you, the pricing is a problem.
+Rep: Can you tell me more about that?
+Prospect: Forty thousand is just out of our budget for a tooling line item. We're a sixty person company.
+Rep: Understood. What is the current process costing you in engineering time?
+Prospect: Hard to say. Maybe a day a week across two people.
+Rep: So roughly a hundred engineering days a year. What's your loaded cost per engineer day?
+Prospect: I'd have to check. Probably four or five hundred.
+Rep: So call it forty to fifty thousand a year in engineering time on a process the platform automates.
+Prospect: That's a fair point actually. I hadn't framed it that way.
+Prospect: Still, I can't sign off on this alone. Our CFO would need to approve anything over twenty five.
+Rep: That's completely normal. Would it help if I put together a one page business case for her?
+Prospect: That would be useful. Send it over and I'll get it in front of her.
+Rep: I'll have it with you tomorrow. Can we put fifteen minutes in for Thursday to walk through her questions?
+Prospect: Thursday works. Let's do that.

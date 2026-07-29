@@ -1,0 +1,7 @@
+Rep: Hi there, I'm trying to reach whoever handles data infrastructure at Globex.
+Prospect: This is reception, can I ask what it's regarding?
+Rep: Sure, we work with data teams on pipeline automation. I was hoping to speak to someone in engineering.
+Prospect: I'm not the right person for that. I can pass on a message.
+Rep: That would be great. Could you tell me who leads that area?
+Prospect: I'm not able to give out names I'm afraid. If you send an email to info at globex we'll route it.
+Rep: Understood, thank you for your help.

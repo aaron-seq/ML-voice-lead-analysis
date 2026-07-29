@@ -1,251 +1,60 @@
-version: '3.8'
-
-# Enhanced Docker Compose configuration for ML Voice Lead Analysis
-# Supports development, staging, and production environments
+# Local and small-deployment stack: API, dashboard, PostgreSQL.
+#
+# For a single team, SQLite is genuinely sufficient and needs no compose file
+# at all -- see the quick start in README.md. This exists for when you want a
+# real database and a reproducible environment.
 
 services:
-  # Backend API Service
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-      target: ${BUILD_TARGET:-production}
-      args:
-        - ENVIRONMENT=${ENVIRONMENT:-production}
-    container_name: ml-voice-backend
-    ports:
-      - "${BACKEND_PORT:-8000}:8000"
+  db:
+    image: postgres:16-alpine
     environment:
-      - ENVIRONMENT=${ENVIRONMENT:-production}
-      - DEBUG=${DEBUG:-false}
-      - HOST=0.0.0.0
-      - PORT=8000
-      - DATA_BUCKET=${S3_BUCKET_NAME:-ml-voice-analysis-data}
-      - AWS_REGION=${AWS_REGION:-us-east-1}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - DATABASE_URL=${DATABASE_URL:-sqlite+aiosqlite:///./voice_analysis.db}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - SECRET_KEY=${SECRET_KEY:-fallback-secret-key-change-in-production}
-      - CLOUD_DEPLOYMENT=${CLOUD_DEPLOYMENT:-false}
+      POSTGRES_DB: callsense
+      POSTGRES_USER: callsense
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-callsense}
     volumes:
-      - ./backend:/app:${VOLUME_MODE:-ro}
-      - backend_logs:/app/logs
-      - backend_temp:/app/temp
-    depends_on:
-      - redis
-      - postgres
-    networks:
-      - ml-voice-network
-    restart: unless-stopped
+      - db-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    deploy:
-      resources:
-        limits:
-          memory: 2G
-          cpus: '1.0'
-        reservations:
-          memory: 1G
-          cpus: '0.5'
+      test: ["CMD-SHELL", "pg_isready -U callsense"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
-  # Frontend Dashboard Service
-  frontend:
+  api:
+    build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-local}
+      DATABASE_URL: postgresql+asyncpg://callsense:${POSTGRES_PASSWORD:-callsense}@db:5432/callsense
+      STORAGE_BACKEND: local
+      STORAGE_LOCAL_PATH: /data/blobs
+      CORS_ORIGINS: http://localhost:3000
+      LOG_FORMAT: ${LOG_FORMAT:-console}
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+      API_KEYS: ${API_KEYS:-}
+      SECRET_KEY: ${SECRET_KEY:-}
+    volumes:
+      - blob-data:/data
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  web:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
-      target: ${BUILD_TARGET:-production}
-    container_name: ml-voice-frontend
-    ports:
-      - "${FRONTEND_PORT:-3000}:3000"
-    environment:
-      - NODE_ENV=${NODE_ENV:-production}
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
-      - NEXT_PUBLIC_APP_NAME=ML Voice Lead Analysis
-      - NEXT_PUBLIC_VERSION=3.1.0
-      - NEXT_TELEMETRY_DISABLED=1
-    volumes:
-      - ./frontend:/app:${VOLUME_MODE:-ro}
-      - frontend_cache:/app/.next
+      args:
+        # Baked into the client bundle at build time; the browser calls this
+        # URL directly, so it must be reachable from the host, not from the
+        # compose network.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     depends_on:
-      - backend
-    networks:
-      - ml-voice-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-          cpus: '0.5'
-        reservations:
-          memory: 512M
-          cpus: '0.25'
-
-  # Redis Cache Service
-  redis:
-    image: redis:7-alpine
-    container_name: ml-voice-redis
+      - api
     ports:
-      - "${REDIS_PORT:-6379}:6379"
-    volumes:
-      - redis_data:/data
-      - ./config/redis.conf:/etc/redis/redis.conf:ro
-    command: redis-server /etc/redis/redis.conf --appendonly yes
-    networks:
-      - ml-voice-network
+      - "3000:3000"
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.25'
-        reservations:
-          memory: 256M
-          cpus: '0.1'
 
-  # PostgreSQL Database Service
-  postgres:
-    image: postgres:15-alpine
-    container_name: ml-voice-postgres
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    environment:
-      - POSTGRES_DB=${POSTGRES_DB:-voice_analysis}
-      - POSTGRES_USER=${POSTGRES_USER:-voice_user}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-voice_password}
-      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./database/init:/docker-entrypoint-initdb.d:ro
-    networks:
-      - ml-voice-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-voice_user} -d ${POSTGRES_DB:-voice_analysis}"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-          cpus: '0.5'
-        reservations:
-          memory: 512M
-          cpus: '0.25'
-
-  # Nginx Reverse Proxy (Production)
-  nginx:
-    image: nginx:alpine
-    container_name: ml-voice-nginx
-    ports:
-      - "${NGINX_PORT:-80}:80"
-      - "${NGINX_SSL_PORT:-443}:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
-      - nginx_logs:/var/log/nginx
-    depends_on:
-      - frontend
-      - backend
-    networks:
-      - ml-voice-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-          cpus: '0.25'
-        reservations:
-          memory: 128M
-          cpus: '0.1'
-    profiles:
-      - production
-
-  # Monitoring with Prometheus (Optional)
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: ml-voice-prometheus
-    ports:
-      - "${PROMETHEUS_PORT:-9090}:9090"
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
-      - '--storage.tsdb.retention.time=30d'
-    networks:
-      - ml-voice-network
-    restart: unless-stopped
-    profiles:
-      - monitoring
-
-  # Grafana Dashboard (Optional)
-  grafana:
-    image: grafana/grafana:latest
-    container_name: ml-voice-grafana
-    ports:
-      - "${GRAFANA_PORT:-3001}:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin123}
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana:/etc/grafana/provisioning:ro
-    depends_on:
-      - prometheus
-    networks:
-      - ml-voice-network
-    restart: unless-stopped
-    profiles:
-      - monitoring
-
-# Named volumes for persistent data
 volumes:
-  postgres_data:
-    driver: local
-  redis_data:
-    driver: local
-  backend_logs:
-    driver: local
-  backend_temp:
-    driver: local
-  frontend_cache:
-    driver: local
-  nginx_logs:
-    driver: local
-  prometheus_data:
-    driver: local
-  grafana_data:
-    driver: local
-
-# Custom network for service communication
-networks:
-  ml-voice-network:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16
+  db-data:
+  blob-data:

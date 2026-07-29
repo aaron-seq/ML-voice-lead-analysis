@@ -1,204 +1,166 @@
-name: CI/CD Pipeline
+name: CI
 
 on:
-  pull_request:
-    branches: [ main ]
   push:
-    branches: [ main ]
+    branches: [main]
+  pull_request:
   workflow_dispatch:
+
+# Cancel superseded runs on the same branch rather than burning minutes on
+# results nobody will read.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   PYTHON_VERSION: '3.11'
-  NODE_VERSION: '18'
+  NODE_VERSION: '20'
 
 jobs:
-  # Backend Testing and Validation
-  backend-test:
-    name: Backend Tests & Quality
+  backend:
+    name: Backend
     runs-on: ubuntu-latest
-    
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Lint
+        working-directory: backend
+        run: ruff check app tests
+
+      # Note: `ruff format` is deliberately not enforced. app/analysis/lexicons.py
+      # is a hand-formatted data table -- auto-formatting explodes each
+      # (phrase, weight) tuple onto its own line and makes the sales lexicon
+      # much harder to review. `ruff check` covers the rules that matter.
+
+      - name: Type check
+        working-directory: backend
+        run: mypy app
+
+      # The previous pipeline printed "Backend validation successful" and never
+      # ran a single test. This actually runs them, and the build fails if
+      # coverage of the analysis engine regresses.
+      - name: Test
+        working-directory: backend
+        run: |
+          pytest --cov=app --cov-report=term-missing --cov-report=xml \
+                 --cov-fail-under=80
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: backend/coverage.xml
+          if-no-files-found: ignore
+
+  backend-postgres:
+    name: Backend (PostgreSQL)
+    runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:15-alpine
+        image: postgres:16-alpine
         env:
-          POSTGRES_DB: test_voice_analysis
-          POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: callsense_test
+          POSTGRES_USER: callsense
+          POSTGRES_PASSWORD: callsense
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-        ports:
-          - 5432:5432
-      
-      redis:
-        image: redis:7-alpine
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 6379:6379
-    
+        ports: ['5432:5432']
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-        cache: 'pip'
-    
-    - name: Install System Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential
-    
-    - name: Install Python Dependencies
-      run: |
-        cd backend
-        pip install --upgrade pip setuptools wheel
-        pip install -r requirements.txt
-        python -m spacy download en_core_web_sm
-    
-    - name: Code Quality Checks
-      run: |
-        cd backend
-        black --check . || true
-        isort --check-only . || true
-        flake8 . || true
-    
-    - name: Run Tests with Mocked AWS
-      env:
-        ENVIRONMENT: testing
-        DISABLE_AWS_CHECKS: "true"
-        DATABASE_URL: postgresql+asyncpg://test_user:test_password@localhost:5432/test_voice_analysis
-        REDIS_URL: redis://localhost:6379/0
-        SECRET_KEY: test-secret-key-for-ci-cd-pipeline
-        DATA_BUCKET: test-bucket
-        AWS_REGION: us-east-1
-      run: |
-        cd backend
-        python -c "print('Backend validation successful')"
-        python -c "from main import app; print('Application imports successfully')"
-    
-    - name: Health Check Validation
-      env:
-        ENVIRONMENT: testing
-        DISABLE_AWS_CHECKS: "true"
-      run: |
-        cd backend
-        python -c "
-        import asyncio
-        from main import app, aws_connector
-        
-        async def test_health():
-            try:
-                # Test that AWS checks can be disabled
-                result = await aws_connector.verify_service_connectivity()
-                print(f'AWS connectivity check result: {result}')
-                print('Health check validation passed')
-            except Exception as e:
-                print(f'Health check validation: {e}')
-        
-        asyncio.run(test_health())
-        "
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
 
-  # Frontend Testing (if exists)
-  frontend-test:
-    name: Frontend Validation
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
-    
-    - name: Check for Frontend
-      id: check-frontend
-      run: |
-        if [ -d "frontend" ] && [ -f "frontend/package.json" ]; then
-          echo "exists=true" >> $GITHUB_OUTPUT
-        else
-          echo "exists=false" >> $GITHUB_OUTPUT
-        fi
-    
-    - name: Set up Node.js
-      if: steps.check-frontend.outputs.exists == 'true'
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ env.NODE_VERSION }}
-    
-    - name: Install and Test Frontend
-      if: steps.check-frontend.outputs.exists == 'true'
-      run: |
-        cd frontend
-        npm ci || npm install
-        npm run build || echo "Build not configured yet"
-    
-    - name: Frontend Not Present
-      if: steps.check-frontend.outputs.exists == 'false'
-      run: echo "Frontend directory not found - backend-only setup"
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt asyncpg
 
-  # Deployment Readiness
-  deployment-ready:
-    name: Deployment Readiness Check
-    runs-on: ubuntu-latest
-    needs: [backend-test, frontend-test]
-    if: github.ref == 'refs/heads/main'
-    
-    steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
-    
-    - name: Validate Deployment Configuration
-      run: |
-        echo "Checking deployment readiness..."
-        
-        # Backend checks
-        [ -f "backend/main.py" ] && echo "✅ Backend application found"
-        [ -f "backend/requirements.txt" ] && echo "✅ Backend dependencies configured"
-        [ -f "backend/Dockerfile" ] && echo "✅ Backend Docker support available"
-        
-        # Environment template checks
-        [ -f "backend/.env.example" ] && echo "✅ Environment template available"
-        
-        echo "🚀 Repository is ready for deployment!"
-    
-    - name: Generate Deployment Guide
-      run: |
-        echo "## 🚀 Deployment Instructions" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Render Deployment:" >> $GITHUB_STEP_SUMMARY
-        echo "1. Connect GitHub repository" >> $GITHUB_STEP_SUMMARY
-        echo "2. Build Command: \`cd backend && pip install -r requirements.txt\`" >> $GITHUB_STEP_SUMMARY
-        echo "3. Start Command: \`cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT\`" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Railway Deployment:" >> $GITHUB_STEP_SUMMARY
-        echo "1. Connect GitHub repository" >> $GITHUB_STEP_SUMMARY
-        echo "2. Railway will auto-detect Python and use backend/" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Environment Variables:" >> $GITHUB_STEP_SUMMARY
-        echo "- ENVIRONMENT=production" >> $GITHUB_STEP_SUMMARY
-        echo "- DATA_BUCKET=your-s3-bucket" >> $GITHUB_STEP_SUMMARY
-        echo "- AWS_REGION=us-east-1" >> $GITHUB_STEP_SUMMARY
-        echo "- AWS_ACCESS_KEY_ID=your-key" >> $GITHUB_STEP_SUMMARY
-        echo "- AWS_SECRET_ACCESS_KEY=your-secret" >> $GITHUB_STEP_SUMMARY
+      # SQLite covers local development; this proves the same schema and
+      # queries work on the database production actually uses.
+      - name: Test against PostgreSQL
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: postgresql+asyncpg://callsense:callsense@localhost:5432/callsense_test
+        run: pytest tests/integration -q
 
-  # Success Notification
-  ci-success:
-    name: CI Success
+  frontend:
+    name: Frontend
     runs-on: ubuntu-latest
-    needs: [backend-test, frontend-test, deployment-ready]
-    if: success()
-    
+    defaults:
+      run:
+        working-directory: frontend
     steps:
-    - name: Success Notification
-      run: |
-        echo "🎉 All CI checks passed!"
-        echo "✅ Backend validation successful"
-        echo "✅ Code quality checks completed"
-        echo "✅ Deployment readiness validated"
-        echo "🚀 Ready for production deployment"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Lint
+        run: npm run lint
+
+      # A build failure here is exactly the class of bug that shipped before:
+      # components importing files that did not exist.
+      - name: Build
+        run: npm run build
+
+  end-to-end:
+    name: End-to-end smoke
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+
+      - name: Install
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      # Proves the documented quick-start actually works on a clean checkout:
+      # no AWS account, no database server, no model download.
+      - name: Import the example transcripts
+        working-directory: backend
+        run: python -m app.cli.main import ../examples/transcripts
+
+      - name: Boot the API and exercise it
+        working-directory: backend
+        run: |
+          uvicorn app.main:app --port 8000 &
+          for i in $(seq 1 30); do
+            curl -sf localhost:8000/health/ready >/dev/null && break
+            sleep 1
+          done
+          curl -sf localhost:8000/health/ready | tee /dev/stderr | grep -q '"status":"healthy"'
+          curl -sf "localhost:8000/api/v1/calls?page_size=5" | grep -q '"lead_band"'
+          curl -sf localhost:8000/api/v1/analytics/pipeline | grep -q 'band_breakdown'
+          curl -sf localhost:8000/api/v1/export/calls.csv | head -1 | grep -q 'lead_score'

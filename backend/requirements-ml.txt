@@ -1,0 +1,8 @@
+# Optional: enables the transformer sentiment analyzer.
+#
+# Install only if you want ENABLE_TRANSFORMER_SENTIMENT=true. The lexicon
+# analyzer is the default and needs none of this. See docs/ARCHITECTURE.md
+# for the trade-off (determinism and speed vs. nuance).
+
+torch==2.5.1
+transformers==4.47.1
