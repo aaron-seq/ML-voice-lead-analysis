@@ -7,12 +7,14 @@ of transcripts. It gets tested like one.
 
 from __future__ import annotations
 
+import io
 import json
+import sys
 
 import pytest
 
 from app.analysis.evaluation import EvaluationReport, evaluate, roc_auc
-from app.cli.main import main, render_analysis
+from app.cli.main import _force_utf8_output, main, render_analysis
 from tests.conftest import QUALIFIED_CALL, REJECTION_CALL
 
 
@@ -30,6 +32,27 @@ class TestAnalyseCommand:
         assert "SCORE BREAKDOWN" in out
         assert "NEXT ACTIONS" in out
         assert "hot" in out.lower()
+
+    def test_report_survives_a_legacy_windows_stream(self, engine, monkeypatch):
+        """The report draws bars with box-drawing characters.
+
+        On Windows a *redirected* stdout encodes with the legacy codepage
+        (cp1252), which cannot represent them, so the quick-start command in
+        README.md died with UnicodeEncodeError before printing anything the
+        moment it was piped or sent to a file. CI never caught it because it
+        only runs on Linux, where the locale is UTF-8.
+        """
+        _, analysis = engine.analyse_text(QUALIFIED_CALL, call_id="legacy-stream")
+        report = render_analysis(analysis, colour=False)
+        assert "█" in report, "report no longer exercises non-ASCII output"
+
+        legacy = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+        monkeypatch.setattr(sys, "stdout", legacy)
+        monkeypatch.setattr(sys, "stderr", legacy)
+
+        _force_utf8_output()
+        legacy.write(report)  # must not raise
+        legacy.flush()
 
     def test_json_output_is_machine_readable(self, transcript_file, capsys):
         assert main(["analyse", str(transcript_file), "--json"]) == 0

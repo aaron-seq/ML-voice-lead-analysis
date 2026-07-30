@@ -231,7 +231,7 @@ Full reference: [docs/API.md](docs/API.md).
 cd backend
 pip install -r requirements-dev.txt
 
-pytest                        # 159 tests
+pytest                        # 194 tests
 ruff check app tests          # lint
 mypy app                      # types
 

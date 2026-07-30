@@ -41,6 +41,12 @@ SORTABLE: dict[str, Any] = {
 
 MAX_PAGE_SIZE = 100
 
+# Ceiling on a single export. Generous for a team reviewing a quarter of calls,
+# and low enough that one request cannot exhaust the worker's memory.
+# ponytail: a flat cap, not pagination. If teams start hitting it, the fix is a
+# cursor-paginated export, not a bigger number.
+EXPORT_MAX_ROWS = 10_000
+
 
 @dataclass(slots=True)
 class CallFilter:
@@ -300,10 +306,20 @@ class CallRepository:
             page_size=page_size,
         )
 
-    async def list_for_export(self, filters: CallFilter | None = None) -> list[Call]:
-        """Every matching call, analysis included. Used by CSV/JSON export."""
+    async def list_for_export(
+        self, filters: CallFilter | None = None, limit: int | None = None
+    ) -> list[Call]:
+        """Matching calls, analysis included. Used by CSV/JSON export.
+
+        Bounded on purpose. Each row carries a 20-50 KB analysis blob, so an
+        unlimited export of a year's calls would materialise hundreds of
+        megabytes in the worker before the first byte reached the client.
+        One extra row is fetched so the caller can tell a full page from a
+        truncated one and say so, rather than silently returning a short export.
+        """
+        limit = EXPORT_MAX_ROWS if limit is None else limit
         stmt = self._apply_filters(select(CallRecord), filters or CallFilter())
-        stmt = stmt.order_by(CallRecord.created_at.desc())
+        stmt = stmt.order_by(CallRecord.created_at.desc()).limit(limit + 1)
         records = (await self._session.execute(stmt)).scalars().all()
         return [self._to_domain(r, include_analysis=True) for r in records]
 

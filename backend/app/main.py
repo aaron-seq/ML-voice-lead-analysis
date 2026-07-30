@@ -91,6 +91,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url=settings.openapi_url,
     )
 
+    # Make the injected settings authoritative for request-time dependencies
+    # too. Without this, `SettingsDep` resolves through the lru_cached
+    # `get_settings()` -- the process-wide object built from the environment --
+    # so `create_app(settings)` configured the middleware and routers from the
+    # argument while every endpoint silently read a different Settings. Passing
+    # auth_enabled or max_upload_bytes in had no effect on the running app.
+    # In the default path this maps get_settings to the object it already
+    # returned, so nothing changes.
+    app.dependency_overrides[get_settings] = lambda: settings
+
     _register_middleware(app, settings)
     _register_exception_handlers(app)
 

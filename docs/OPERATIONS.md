@@ -17,7 +17,7 @@ Health-check paths are excluded from the access log to keep it readable.
 **Timing.** Every response carries `Server-Timing: app;dur=<ms>`. Analysis
 duration is recorded per call in `metadata.processing_ms`.
 
-**Audit.** `GET /api/v1/audit` lists ingest, re-analyse, delete and export
+**Audit.** `GET /api/v1/audit` (admin only) lists ingest, re-analyse, delete and export
 events with principal and timestamp.
 
 ## Common tasks

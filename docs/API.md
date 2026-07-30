@@ -179,9 +179,16 @@ should move to a normalised signals table — see [ROADMAP.md](ROADMAP.md).
 One row per call, flattened for a spreadsheet or CRM import. Accepts `band`,
 `owner`, `min_score`, `created_after`. Audited.
 
-### `GET /api/v1/audit`  *(analyst)*
+Capped at 10,000 rows, newest first, because every row carries its full
+analysis JSON. When the cap is hit the response sets `X-Export-Truncated: true`
+— narrow the filters and export again rather than assuming you have everything.
+
+### `GET /api/v1/audit`  *(admin)*
 
 Recent audit events: ingest, re-analyse, delete, export. `limit` 1–500.
+
+Admin-only: the log names the principal behind every upload, export and
+deletion, so it is not readable by the analysts it records.
 
 ---
 
