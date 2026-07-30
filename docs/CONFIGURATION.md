@@ -11,10 +11,12 @@ immediately with a specific message rather than misbehaving later.
 | Variable | Default | Notes |
 |---|---|---|
 | `ENVIRONMENT` | `local` | `local`, `test`, `staging`, `production` |
-| `HOST` / `PORT` | `0.0.0.0` / `8000` | |
+| `HOST` | `127.0.0.1` | Loopback by default so a local run is not exposed to the network. Containers pass `--host 0.0.0.0` explicitly. |
+| `PORT` | `8000` | |
 | `API_PREFIX` | `/api/v1` | |
 | `LOG_LEVEL` | `INFO` | |
 | `LOG_FORMAT` | `console` | Use `json` in production |
+| `METRICS_ENABLED` | `true` | Serve Prometheus metrics at `/metrics`. `false` returns 404. |
 
 Setting `ENVIRONMENT=production` also disables `/docs`, `/redoc` and
 `/openapi.json`, enables HSTS, and **forces `AUTH_ENABLED=true`**.
@@ -49,8 +51,12 @@ so keys cannot be logged or persisted by accident.
 |---|---|---|
 | `AUTH_ENABLED` | `false` | Forced true in staging/production |
 | `API_KEYS` | — | Comma-separated `key:role` pairs |
-| `SECRET_KEY` | random | Must be ≥ 32 chars in staging/production |
 | `RATE_LIMIT_PER_MINUTE` | `120` | Per principal. `0` disables |
+
+There is deliberately **no `SECRET_KEY`**. Authentication compares API keys as
+SHA-256 digests; nothing is signed or encrypted, so a signing secret would be a
+setting that does nothing while forcing operators to manage it. See
+[ADR 0005](adr/0005-no-signing-secret.md).
 | `CORS_ORIGINS` | `http://localhost:3000,...` | `*` rejected in production |
 | `CORS_ORIGIN_REGEX` | — | For dynamic origins such as preview deployments |
 | `MAX_UPLOAD_BYTES` | `26214400` (25 MB) | |

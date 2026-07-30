@@ -13,6 +13,7 @@ import uuid
 
 from app.analysis.engine import AnalysisEngine
 from app.core.errors import CallSenseError
+from app.core.metrics import record_ingestion_failure
 from app.db.repository import AuditRepository, CallRepository
 from app.domain.models import AnalysisStatus, Call
 from app.storage.base import BlobStore
@@ -97,6 +98,7 @@ class IngestionService:
             await self._repo.mark_status(
                 call_id, AnalysisStatus.FAILED, exc.message, commit=True
             )
+            record_ingestion_failure(exc.code)
             logger.warning(
                 "Ingestion failed", extra={"call_id": call_id, "reason": exc.code}
             )
@@ -108,6 +110,7 @@ class IngestionService:
                 f"Unexpected analysis error: {exc}",
                 commit=True,
             )
+            record_ingestion_failure("unexpected_error")
             logger.exception("Unexpected analysis failure", extra={"call_id": call_id})
             raise
 

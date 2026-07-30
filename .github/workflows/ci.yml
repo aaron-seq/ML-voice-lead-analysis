@@ -48,6 +48,17 @@ jobs:
         working-directory: backend
         run: mypy app
 
+      # A newly disclosed advisory in a pinned dependency should fail the build,
+      # not sit unnoticed. The as-merged dependency set carried 14 known
+      # vulnerabilities across 3 packages before this gate existed.
+      - name: Dependency audit
+        working-directory: backend
+        run: pip-audit -r requirements.txt -r requirements-dev.txt --strict
+
+      - name: Security static analysis
+        working-directory: backend
+        run: bandit -q -r app
+
       # The previous pipeline printed "Backend validation successful" and never
       # ran a single test. This actually runs them, and the build fails if
       # coverage of the analysis engine regresses.
@@ -56,6 +67,13 @@ jobs:
         run: |
           pytest --cov=app --cov-report=term-missing --cov-report=xml \
                  --cov-fail-under=80
+
+      # Benchmarks assert only loose ceilings and a scaling ratio, so they
+      # catch an accidentally quadratic analyzer without failing because a
+      # shared runner was busy. Output is printed for the record.
+      - name: Benchmarks
+        working-directory: backend
+        run: pytest tests/test_benchmarks.py -s -q
 
       - name: Upload coverage
         if: always()
@@ -119,6 +137,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+
       - name: Type check
         run: npm run type-check
 
@@ -129,6 +150,44 @@ jobs:
       # components importing files that did not exist.
       - name: Build
         run: npm run build
+
+  accessibility:
+    name: Accessibility
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        run: |
+          pip install -r backend/requirements.txt
+          cd frontend && npm ci && npx playwright install --with-deps chromium
+          npm install --no-save @axe-core/playwright playwright
+
+      - name: Seed and boot
+        run: |
+          cd backend
+          python -m app.cli.main import ../examples/transcripts
+          uvicorn app.main:app --host 127.0.0.1 --port 8000 &
+          cd ../frontend && npm run build && npx next start -p 3000 &
+          for i in $(seq 1 60); do
+            curl -sf localhost:3000 >/dev/null && \
+            curl -sf localhost:8000/health/live >/dev/null && break
+            sleep 2
+          done
+
+      # WCAG 2.1 A/AA via axe-core, across every view in both colour schemes.
+      # Fails the build on any violation.
+      - name: axe-core audit
+        run: cd frontend && node scripts/a11y-audit.mjs
 
   end-to-end:
     name: End-to-end smoke
@@ -164,3 +223,4 @@ jobs:
           curl -sf "localhost:8000/api/v1/calls?page_size=5" | grep -q '"lead_band"'
           curl -sf localhost:8000/api/v1/analytics/pipeline | grep -q 'band_breakdown'
           curl -sf localhost:8000/api/v1/export/calls.csv | head -1 | grep -q 'lead_score'
+          curl -sf localhost:8000/metrics | grep -q 'callsense_analyses_total'

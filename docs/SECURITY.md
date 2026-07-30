@@ -15,6 +15,8 @@
 | Secrets | AWS credentials only from the provider chain, never from settings. Keys never logged; `ApiKeyRegistry.__repr__` redacts |
 | Error handling | Internal exception messages never reach clients; correlated by request ID in logs |
 | Audit | Ingest, re-analyse, delete and export recorded with principal, timestamp and detail |
+| Dependency scanning | `pip-audit` and `npm audit` run in CI and fail the build on a new advisory |
+| Static analysis | `bandit` runs in CI over the backend |
 
 ## What is not
 
@@ -32,6 +34,16 @@ Be clear-eyed about this before deploying.
   calls contain card numbers or health information, that data lands in your
   database unmodified.
 - **No retention policy.** Nothing is deleted automatically.
+- **`/metrics` and the health endpoints are unauthenticated.** They expose
+  counters and latencies only — no transcript content, no customer data, no
+  configuration. Restrict them at the ingress if your scrape target is not on a
+  trusted network.
+- **One unfixable-by-upgrade advisory may remain in the frontend tree at any
+  time.** `npm audit` runs in CI; when an advisory has no forward fix, it is
+  recorded here rather than suppressed silently. As of the last audit the
+  frontend tree is clean (four libvips CVEs in `sharp` were resolved by an
+  `overrides` pin to `^0.35.3`, since Next pulls a vulnerable 0.34.x and the
+  dashboard uses no `next/image`).
 - **`NEXT_PUBLIC_API_KEY` is visible to anyone using the dashboard**, because
   Next.js compiles it into the client bundle. Use a viewer/analyst key, never an
   admin key, or front the dashboard with your own auth proxy.
@@ -40,7 +52,6 @@ Be clear-eyed about this before deploying.
 
 ```bash
 ENVIRONMENT=production          # forces auth on, disables docs, enables HSTS
-SECRET_KEY=<32+ random chars>
 API_KEYS="<generated key>:admin"
 CORS_ORIGINS=https://calls.yourcompany.com
 DATABASE_URL=postgresql+asyncpg://...

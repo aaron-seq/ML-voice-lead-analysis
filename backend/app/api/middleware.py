@@ -11,6 +11,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from app.core.logging import principal_var, request_id_var
+from app.core.metrics import record_request
 
 logger = logging.getLogger("app.access")
 
@@ -48,6 +49,16 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         elapsed = (time.perf_counter() - started) * 1000
         response.headers["X-Request-ID"] = request_id
         response.headers["Server-Timing"] = f"app;dur={elapsed:.1f}"
+
+        # Label on the matched route template, never the raw path: a path label
+        # would mint a fresh time series for every call id.
+        route = request.scope.get("route")
+        record_request(
+            method=request.method,
+            route=getattr(route, "path", None) or "unmatched",
+            status=response.status_code,
+            duration_s=elapsed / 1000.0,
+        )
 
         if request.url.path not in _QUIET_PATHS:
             log = logger.warning if response.status_code >= 500 else logger.info

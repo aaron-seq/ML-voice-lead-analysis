@@ -23,6 +23,7 @@ from app.analysis.sentiment import (
     build_analyzer,
 )
 from app.core.config import Settings
+from app.core.metrics import record_analysis
 from app.domain.models import (
     ENGINE_VERSION,
     AnalysisMetadata,
@@ -132,6 +133,11 @@ class AnalysisEngine:
             )
 
         elapsed_ms = (time.perf_counter() - started) * 1000.0
+        record_analysis(
+            band=lead_score.band.value,
+            outcome=call_outcome.label.value,
+            duration_s=elapsed_ms / 1000.0,
+        )
         logger.info(
             "Analysed call",
             extra={

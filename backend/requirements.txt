@@ -4,14 +4,24 @@
 # transformers and spaCy (~2.5 GB plus a model download) for an analysis path
 # that never ran. The engine here is pure Python; heavyweight ML is opt-in via
 # requirements-ml.txt.
+#
+# Pins are exact so a deploy is reproducible. `pip-audit -r requirements.txt`
+# runs in CI, so a newly disclosed advisory fails the build rather than sitting
+# unnoticed -- see docs/SECURITY.md.
 
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-python-multipart==0.0.20
-pydantic==2.10.4
-pydantic-settings==2.7.0
+fastapi==0.141.1
+# Pinned explicitly rather than left to FastAPI's resolver: Starlette < 0.49.1
+# carries several advisories (PYSEC-2026-248/249/1941/1942/2280/2281), and an
+# unpinned transitive dependency is exactly how those reappear.
+starlette==1.3.1
+uvicorn[standard]==0.52.0
+# 0.0.20 had six advisories in the multipart parser, which is the code path
+# directly exposed by POST /calls/upload.
+python-multipart==0.0.32
+pydantic==2.13.4
+pydantic-settings==2.14.2
 
-sqlalchemy[asyncio]==2.0.36
-aiosqlite==0.20.0
+sqlalchemy[asyncio]==2.0.51
+aiosqlite==0.22.1
 
-python-dotenv==1.0.1
+python-dotenv==1.2.2

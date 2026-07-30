@@ -34,7 +34,6 @@ services:
       LOG_FORMAT: ${LOG_FORMAT:-console}
       AUTH_ENABLED: ${AUTH_ENABLED:-false}
       API_KEYS: ${API_KEYS:-}
-      SECRET_KEY: ${SECRET_KEY:-}
     volumes:
       - blob-data:/data
     ports:

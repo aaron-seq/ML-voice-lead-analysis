@@ -22,7 +22,6 @@ docker compose run --rm api python -m app.cli.main keygen --role admin
 docker build -t callsense-api ./backend
 docker run -p 8000:8000 \
   -e ENVIRONMENT=production \
-  -e SECRET_KEY="$(openssl rand -base64 48)" \
   -e API_KEYS="cs_yourkey:admin" \
   -e CORS_ORIGINS=https://calls.example.com \
   -e DATABASE_URL=postgresql+asyncpg://user:pass@db:5432/callsense \

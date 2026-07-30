@@ -83,6 +83,16 @@ Install the driver: `pip install -r requirements-postgres.txt`. The URL must use
 
 ## Frontend
 
+**`next lint` says "Invalid project directory provided, no such directory: .../lint".**
+`next lint` was removed in Next 16. Linting runs `eslint .` against
+`eslint.config.mjs`. Use `npm run lint`.
+
+**ESLint crashes with `contextOrFilename.getFilename is not a function`.**
+That is `eslint-plugin-react` (bundled inside `eslint-config-next`) calling the
+pre-ESLint-10 rule API. This project does not use `eslint-config-next` for that
+reason — it configures `@next/eslint-plugin-next` and `typescript-eslint`
+directly. If you reintroduce `eslint-config-next`, pin ESLint to 9.x.
+
 **Build fails on a missing module.**
 Run `npm ci` from `frontend/`. If it persists, `rm -rf node_modules .next` and
 reinstall.

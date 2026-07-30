@@ -39,6 +39,7 @@ already have, with no per-seat cost and no data leaving your network.
 | **Conversation metrics** | Talk ratio, question counts, sentiment trajectory across the call |
 | **Pipeline analytics** | Band distribution, recurring objections, team-wide coaching signals |
 | **Export** | One-row-per-call CSV for your CRM or spreadsheet |
+| **Observability** | Structured JSON logs with request correlation, Prometheus metrics at `/metrics` |
 
 ### Every score is explainable
 
@@ -143,11 +144,22 @@ reports `unknown` and scores conservatively rather than guessing.
 
 **The analysis engine is pure Python** — no spaCy, no PyTorch, no transformers on
 the default path. It is deterministic (the same transcript always produces the
-same score), runs in ~3 ms per call, and every finding carries the transcript span
-that produced it. A transformer sentiment analyzer is available as an opt-in
-upgrade (`ENABLE_TRANSFORMER_SENTIMENT=true`).
+same score), and every finding carries the transcript span that produced it. A
+transformer sentiment analyzer is available as an opt-in upgrade
+(`ENABLE_TRANSFORMER_SENTIMENT=true`).
 
-Full detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Measured, not asserted — `pytest tests/test_benchmarks.py -s` reproduces these:
+
+| Measurement | Result |
+|---|---|
+| 40-turn call (396 words) | **2.2 ms** mean, 2.4 ms p95 |
+| Per 1,000 words | **5.0 ms** |
+| Sustained batch, single thread | **472 calls/s** |
+| Scaling: 10× the words | **7.6× the time** (sub-linear) |
+| Phrase matcher: 1 → 2,001 phrases | **1.05×** (first-token index) |
+
+Full detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Design decisions and
+their costs: [docs/adr/](docs/adr/).
 
 ---
 
@@ -188,6 +200,8 @@ Read this before deciding whether CallSense fits your team.
 | [SECURITY.md](docs/SECURITY.md) | Auth model, threat model, what is and is not protected |
 | [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Common failures and their fixes |
 | [ROADMAP.md](docs/ROADMAP.md) | Where this is going, in phases |
+| [adr/](docs/adr/) | Architecture decision records — what was decided, why, and what it costs |
+| [OPERATIONS.md](docs/OPERATIONS.md) | Running it: logs, metrics, backups, capacity, failure modes |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Dev setup, tests, how to extend the lexicons |
 
 ---
@@ -231,18 +245,26 @@ Full reference: [docs/API.md](docs/API.md).
 cd backend
 pip install -r requirements-dev.txt
 
-pytest                        # 159 tests
-ruff check app tests          # lint
-mypy app                      # types
+pytest                                  # 208 tests
+pytest tests/test_benchmarks.py -s      # performance figures
+ruff check app tests                    # lint
+mypy app                                # types
+bandit -q -r app                        # security static analysis
+pip-audit -r requirements.txt --strict  # dependency advisories
 
 cd ../frontend
-npm run type-check && npm run build
+npm run lint && npm run type-check && npm run build
+npm audit --audit-level=high
 ```
 
 The test suite runs against the real engine, a real database and real storage —
 nothing is mocked. `tests/integration/test_contract.py` enforces that an analysis
 produced by the engine round-trips through storage and the API unchanged, and
 that every field the dashboard reads still exists.
+
+CI additionally runs the integration suite against PostgreSQL, audits both
+dependency trees, and boots the API to exercise the documented quick-start on a
+clean checkout.
 
 ## Contributing
 

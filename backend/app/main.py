@@ -91,6 +91,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url=settings.openapi_url,
     )
 
+    # Set eagerly as well as in the lifespan: dependencies resolve settings from
+    # app.state, and that must work even for a sub-application mounted without
+    # its own lifespan running.
+    app.state.settings = settings
+
     _register_middleware(app, settings)
     _register_exception_handlers(app)
 

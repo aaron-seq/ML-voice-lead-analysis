@@ -8,17 +8,24 @@ cd ML-voice-lead-analysis/backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 
-pytest                 # 159 tests, ~10s
-ruff check app tests
-mypy app
+pytest                                  # 208 tests, ~10s
+pytest tests/test_benchmarks.py -s      # performance figures
+ruff check app tests                    # lint
+mypy app                                # types
+bandit -q -r app                        # security static analysis
+pip-audit -r requirements.txt --strict  # dependency advisories
 ```
 
 Frontend:
 
 ```bash
 cd frontend && npm install
-npm run type-check && npm run build
+npm run lint && npm run type-check && npm run build
+npm audit --audit-level=high
 ```
+
+Note that `next lint` no longer exists (removed in Next 16); `npm run lint` runs
+`eslint .` against `eslint.config.mjs`.
 
 ## The highest-value contribution: lexicon coverage
 
@@ -67,6 +74,11 @@ Weight guidance:
   trade-offs, not what the next line does.
 - `ruff format` is intentionally not enforced — `lexicons.py` is a hand-formatted
   data table and auto-formatting makes it much harder to review.
+- **Every setting must do something.** A config field nothing reads is
+  fabricated functionality; `SECRET_KEY`, `SENTRY_DSN` and `ANALYSIS_TIMEOUT_S`
+  were removed for exactly that reason (see
+  [ADR 0005](docs/adr/0005-no-signing-secret.md)). If you add one, add the code
+  that consumes it in the same change.
 
 ## Testing standards
 
@@ -86,6 +98,13 @@ product was broken end to end.
 2. Dispatch to it from `parse_transcript` (detect from **content**, not the file
    extension — `.json` covers at least four incompatible shapes).
 3. Add a round-trip test in `tests/unit/test_parsing.py`.
+
+## Architecture decisions
+
+Non-obvious decisions live in [docs/adr/](docs/adr/). If a change reverses one,
+update the ADR's *Revisit if* section rather than silently contradicting it. If a
+change makes a new non-obvious decision, add an ADR — five short sections, not a
+design document.
 
 ## Pull requests
 

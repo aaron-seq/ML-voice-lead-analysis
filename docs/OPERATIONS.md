@@ -17,6 +17,41 @@ Health-check paths are excluded from the access log to keep it readable.
 **Timing.** Every response carries `Server-Timing: app;dur=<ms>`. Analysis
 duration is recorded per call in `metadata.processing_ms`.
 
+**Metrics.** Prometheus exposition at `/metrics` (disable with
+`METRICS_ENABLED=false`, which returns 404):
+
+| Metric | Type | Labels |
+|---|---|---|
+| `callsense_http_requests_total` | counter | `method`, `route`, `status` |
+| `callsense_http_request_duration_seconds` | histogram | `method`, `route` |
+| `callsense_analyses_total` | counter | `band`, `outcome` |
+| `callsense_analysis_duration_seconds` | histogram | — |
+| `callsense_ingestion_failures_total` | counter | `reason` |
+| `callsense_uptime_seconds` | gauge | — |
+
+`route` is the **route template** (`/api/v1/calls/{call_id}`), not the request
+path, so cardinality does not grow with the number of calls.
+
+**Counters are per worker process.** With 4 workers, a single load-balanced
+scrape sees roughly a quarter of the traffic. Scrape each worker as its own
+target, or accept that absolute totals are per-instance. The same applies to the
+rate limiter. A shared Redis-backed implementation is on the roadmap.
+
+A useful starting alert set:
+
+```promql
+# Error rate above 5% over 5 minutes
+sum(rate(callsense_http_requests_total{status=~"5.."}[5m]))
+  / sum(rate(callsense_http_requests_total[5m])) > 0.05
+
+# Ingestion failing repeatedly — usually a bad upstream transcript export
+sum(rate(callsense_ingestion_failures_total[15m])) > 0.1
+
+# p95 request latency above half a second
+histogram_quantile(0.95,
+  sum(rate(callsense_http_request_duration_seconds_bucket[5m])) by (le)) > 0.5
+```
+
 **Audit.** `GET /api/v1/audit` lists ingest, re-analyse, delete and export
 events with principal and timestamp.
 
@@ -60,8 +95,17 @@ there is a production deployment with data to migrate is premature.
 
 ## Capacity
 
-Analysis is ~3 ms per call, so the engine is never the bottleneck; the database
-and blob storage are. Rough guidance:
+Measured on a single core (`pytest tests/test_benchmarks.py -s`):
+
+| | |
+|---|---|
+| 40-turn call (396 words) | 2.2 ms mean, 2.4 ms p95 |
+| Per 1,000 words | 5.0 ms |
+| Sustained batch, one thread | 472 calls/s |
+
+The engine is therefore never the bottleneck — the database and blob storage
+are. A backlog of 100,000 transcripts imports in roughly four minutes of CPU.
+Rough guidance:
 
 | Scale | Setup |
 |---|---|
@@ -77,3 +121,5 @@ and blob storage are. Rough guidance:
 | `/health/ready` 503, storage unhealthy | Disk full or S3 denied | Ingestion fails; existing analyses still readable from the database |
 | Calls stuck in `failed` | Unparseable transcripts | `error` on the record explains why; the raw blob is retained for re-analysis |
 | Rising 429s | Rate limit reached | Raise `RATE_LIMIT_PER_MINUTE`, remembering it is per process |
+| `/metrics` returns 404 | `METRICS_ENABLED=false` | Intended behaviour; set it to `true` |
+| Metrics totals look low | Per-worker counters | Scrape each worker, or expect `total / workers` |

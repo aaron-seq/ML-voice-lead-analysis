@@ -9,7 +9,6 @@ to a README warning.
 
 from __future__ import annotations
 
-import secrets
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
@@ -47,7 +46,10 @@ class Settings(BaseSettings):
     environment: Environment = Environment.LOCAL
 
     # -- HTTP -------------------------------------------------------------
-    host: str = "0.0.0.0"
+    # Loopback by default so `uvicorn app.main:app` on a laptop is not exposed
+    # to the whole local network. Containers must bind all interfaces to be
+    # reachable, so the Dockerfile passes --host 0.0.0.0 explicitly.
+    host: str = "127.0.0.1"
     port: int = 8000
     api_prefix: str = "/api/v1"
     cors_origins: list[str] = Field(
@@ -78,11 +80,12 @@ class Settings(BaseSettings):
     aws_region: str = "us-east-1"
 
     # -- Security ---------------------------------------------------------
-    secret_key: str = Field(
-        default_factory=lambda: secrets.token_urlsafe(48),
-        description="Signing key. Auto-generated in local/test; required in "
-        "staging/production so tokens do not silently invalidate on restart.",
-    )
+    #
+    # There is deliberately no SECRET_KEY. Authentication is API-key based and
+    # keys are compared as SHA-256 digests -- nothing is signed or encrypted,
+    # so a signing secret would be a setting that does nothing while forcing
+    # operators to generate and rotate it. If signed sessions or JWTs are added
+    # later, the secret arrives with them.
     auth_enabled: bool = Field(
         False,
         description="When false the API runs open with an implicit admin "
@@ -105,13 +108,15 @@ class Settings(BaseSettings):
         "the lexicon analyzer needs no model download and is deterministic.",
     )
     transformer_model: str = "cardiffnlp/twitter-roberta-base-sentiment-latest"
-    analysis_timeout_s: float = 120.0
 
     # -- Observability ----------------------------------------------------
     log_level: str = "INFO"
     log_format: str = Field("console", description="'console' or 'json'")
-    metrics_enabled: bool = True
-    sentry_dsn: str | None = None
+    metrics_enabled: bool = Field(
+        True,
+        description="Expose Prometheus metrics at /metrics. Values are "
+        "per-worker; see docs/OPERATIONS.md.",
+    )
 
     # ---------------------------------------------------------------------
 
@@ -137,8 +142,6 @@ class Settings(BaseSettings):
     def _enforce_production_invariants(self) -> Settings:
         if self.environment in (Environment.STAGING, Environment.PRODUCTION):
             problems: list[str] = []
-            if len(self.secret_key) < 32:
-                problems.append("SECRET_KEY must be at least 32 characters")
             if "*" in self.cors_origins:
                 problems.append("CORS_ORIGINS must not contain '*'")
             if self.storage_backend is StorageBackend.S3 and not self.s3_bucket:
@@ -162,10 +165,6 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment is Environment.PRODUCTION
-
-    @property
-    def is_test(self) -> bool:
-        return self.environment is Environment.TEST
 
     @property
     def docs_url(self) -> str | None:
