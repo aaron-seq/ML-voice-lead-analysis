@@ -10,7 +10,14 @@ import json
 
 import pytest
 
-from tests.conftest import OBJECTION_CALL, QUALIFIED_CALL, REJECTION_CALL
+from tests.conftest import (
+    ADMIN_KEY,
+    ANALYST_KEY,
+    OBJECTION_CALL,
+    QUALIFIED_CALL,
+    REJECTION_CALL,
+    VIEWER_KEY,
+)
 
 API = "/api/v1"
 
@@ -256,6 +263,68 @@ class TestExport:
         client.get(f"{API}/export/calls.csv")
         actions = [e["action"] for e in client.get(f"{API}/audit").json()]
         assert "export.csv" in actions
+
+    def test_export_is_bounded_and_says_when_it_truncates(self, client, monkeypatch):
+        """Each row carries a 20-50 KB analysis blob, so an unlimited export
+        would materialise the whole table in the worker. A truncated export has
+        to announce itself rather than look complete."""
+        monkeypatch.setattr("app.api.routers.analytics.EXPORT_MAX_ROWS", 2)
+        monkeypatch.setattr("app.db.repository.EXPORT_MAX_ROWS", 2)
+        for index in range(3):
+            create_call(client, title=f"Call {index}")
+
+        response = client.get(f"{API}/export/calls.csv")
+        assert response.status_code == 200
+        assert response.headers["X-Export-Truncated"] == "true"
+        # header row + the capped number of data rows
+        assert len(response.text.strip().splitlines()) == 3
+
+
+class TestRoleEnforcement:
+    """Roles as actually enforced over HTTP, with auth switched on."""
+
+    def test_the_audit_log_is_admin_only(self, auth_client):
+        """It names the principal behind every upload, export and deletion, so
+        the analysts it records must not be able to read it. The endpoint was
+        documented admin-only but accepted any analyst."""
+        assert auth_client.get(
+            f"{API}/audit", headers={"X-API-Key": ANALYST_KEY}
+        ).status_code == 403
+        assert auth_client.get(
+            f"{API}/audit", headers={"X-API-Key": ADMIN_KEY}
+        ).status_code == 200
+
+    def test_a_viewer_cannot_write_or_export(self, auth_client):
+        headers = {"X-API-Key": VIEWER_KEY}
+        assert auth_client.get(f"{API}/calls", headers=headers).status_code == 200
+        assert auth_client.post(
+            f"{API}/calls",
+            json={"title": "t", "transcript": QUALIFIED_CALL},
+            headers=headers,
+        ).status_code == 403
+        assert auth_client.get(
+            f"{API}/export/calls.csv", headers=headers
+        ).status_code == 403
+
+    def test_only_an_admin_may_delete(self, auth_client):
+        created = auth_client.post(
+            f"{API}/calls",
+            json={"title": "t", "transcript": QUALIFIED_CALL},
+            headers={"X-API-Key": ANALYST_KEY},
+        )
+        call_id = created.json()["id"]
+        assert auth_client.delete(
+            f"{API}/calls/{call_id}", headers={"X-API-Key": ANALYST_KEY}
+        ).status_code == 403
+        assert auth_client.delete(
+            f"{API}/calls/{call_id}", headers={"X-API-Key": ADMIN_KEY}
+        ).status_code == 204
+
+    def test_a_missing_or_bad_key_is_rejected(self, auth_client):
+        assert auth_client.get(f"{API}/calls").status_code == 401
+        assert auth_client.get(
+            f"{API}/calls", headers={"X-API-Key": "not-a-real-key"}
+        ).status_code == 401
 
 
 class TestAudit:

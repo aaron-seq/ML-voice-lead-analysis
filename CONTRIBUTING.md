@@ -8,7 +8,7 @@ cd ML-voice-lead-analysis/backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 
-pytest                 # 159 tests, ~10s
+pytest                 # 194 tests, ~10s
 ruff check app tests
 mypy app
 ```
@@ -27,33 +27,33 @@ never seen. If your team says something the engine does not detect, that is a
 bug worth reporting and an easy fix.
 
 1. Confirm the miss:
+
    ```bash
    python -m app.cli.main analyse your-call.txt
    ```
+
    A component sitting at `0.0` with a phrase in the transcript that should have
    fired is the signature.
-
 2. Add the phrase to `backend/app/analysis/lexicons.py`:
+
    ```python
    SignalType.BUDGET: [
        ("we have budget", 0.95),
        ("your new phrase", 0.80),   # weight = how diagnostic, not how loud
    ],
    ```
-
 3. Add a test in `tests/unit/test_analysis.py`.
-
 4. Run `pytest`. `TestLexiconHygiene` will fail if the phrase already exists
    under another signal type.
 
 Weight guidance:
 
-| Range | Meaning |
-|---|---|
+| Range      | Meaning                                              |
+| ---------- | ---------------------------------------------------- |
 | 0.90–0.95 | Near-certain ("budget is approved", "I can approve") |
-| 0.70–0.85 | Strong ("we need", "next steps") |
-| 0.50–0.65 | Suggestive ("pricing", "timeline") |
-| 0.35–0.50 | Weak context only |
+| 0.70–0.85 | Strong ("we need", "next steps")                     |
+| 0.50–0.65 | Suggestive ("pricing", "timeline")                   |
+| 0.35–0.50 | Weak context only                                    |
 
 ## Code standards
 

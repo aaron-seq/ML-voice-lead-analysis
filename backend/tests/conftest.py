@@ -70,6 +70,46 @@ def client(settings: Settings) -> Iterator[TestClient]:
     get_settings.cache_clear()
 
 
+# Keys for the auth-enabled client below. Must clear the 16-character minimum
+# the registry enforces.
+VIEWER_KEY = "cs_test_viewer_key_0000000000"
+ANALYST_KEY = "cs_test_analyst_key_000000000"
+ADMIN_KEY = "cs_test_admin_key_00000000000"
+
+
+@pytest.fixture
+def auth_client(settings: Settings) -> Iterator[TestClient]:
+    """A TestClient with authentication actually switched on.
+
+    The default ``client`` fixture runs with ``auth_enabled=False``, where every
+    caller is an implicit admin -- so it can never catch an endpoint guarded by
+    the wrong role. Nothing exercised the role wiring end to end before this.
+    """
+    from app.main import create_app
+
+    session_module._engine = None
+    session_module._sessionmaker = None
+
+    secured = settings.model_copy(
+        update={
+            "auth_enabled": True,
+            "api_keys": [
+                f"{VIEWER_KEY}:viewer",
+                f"{ANALYST_KEY}:analyst",
+                f"{ADMIN_KEY}:admin",
+            ],
+        }
+    )
+
+    app = create_app(secured)
+    with TestClient(app) as test_client:
+        yield test_client
+
+    session_module._engine = None
+    session_module._sessionmaker = None
+    get_settings.cache_clear()
+
+
 @pytest.fixture
 async def db_session(settings: Settings) -> AsyncIterator:
     """A bare database session for repository-level tests."""

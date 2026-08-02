@@ -16,8 +16,14 @@ from typing import Annotated
 from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 
-from app.api.deps import AuditRepoDep, CallRepoDep, RequireAnalyst, RequireViewer
-from app.db.repository import CallFilter
+from app.api.deps import (
+    AuditRepoDep,
+    CallRepoDep,
+    RequireAdmin,
+    RequireAnalyst,
+    RequireViewer,
+)
+from app.db.repository import EXPORT_MAX_ROWS, CallFilter
 from app.domain.models import LeadBand, PipelineAnalytics, utcnow
 
 router = APIRouter(tags=["Analytics"])
@@ -67,6 +73,10 @@ async def export_csv(
 ) -> StreamingResponse:
     """One row per call, flattened for a spreadsheet or CRM import.
 
+    Capped at `EXPORT_MAX_ROWS` newest-first. A truncated export says so in the
+    `X-Export-Truncated` header rather than looking like a complete one --
+    narrow the filters to get the rest.
+
     Exporting customer conversation data is audited.
     """
     calls = await repo.list_for_export(
@@ -74,9 +84,16 @@ async def export_csv(
             bands=band, owner=owner, min_score=min_score, created_after=created_after
         )
     )
+    truncated = len(calls) > EXPORT_MAX_ROWS
+    del calls[EXPORT_MAX_ROWS:]
+
     await audit.record(
         principal.id, "export.csv", None,
-        {"rows": len(calls), "filtered_by_band": [b.value for b in band or []]},
+        {
+            "rows": len(calls),
+            "truncated": truncated,
+            "filtered_by_band": [b.value for b in band or []],
+        },
     )
 
     buffer = io.StringIO()
@@ -125,18 +142,26 @@ async def export_csv(
         iter([buffer.getvalue()]),
         media_type="text/csv",
         headers={
-            "Content-Disposition": f'attachment; filename="callsense-{stamp}.csv"'
+            "Content-Disposition": f'attachment; filename="callsense-{stamp}.csv"',
+            "X-Export-Truncated": "true" if truncated else "false",
         },
     )
 
 
 @router.get("/audit", summary="Recent audit events (admin)")
 async def list_audit_events(
-    principal: RequireAnalyst,
+    principal: RequireAdmin,
     audit: AuditRepoDep,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> list[dict]:
-    """Who did what. Useful for answering compliance questions directly."""
+    """Who did what. Useful for answering compliance questions directly.
+
+    Admin-only: the log names the principal behind every upload, export and
+    deletion, so it is exactly the endpoint that must not be readable by the
+    analysts it records. This enforces what the role table in docs/API.md and
+    ``Role``'s own docstring already promised -- it previously accepted any
+    analyst.
+    """
     events = await audit.recent(limit)
     return [
         {

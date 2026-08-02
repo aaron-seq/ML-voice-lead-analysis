@@ -280,8 +280,26 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _force_utf8_output()
     args = build_parser().parse_args(argv)
     return args.func(args)
+
+
+def _force_utf8_output() -> None:
+    """Make the reports printable when stdout is not a UTF-8 console.
+
+    The reports use box-drawing and block characters. On Windows a *redirected*
+    stream falls back to the legacy locale encoding (cp1252), which cannot
+    encode them, so `callsense analyse call.txt > report.txt` -- and the
+    quick-start command in README.md, under any piped shell -- died with
+    UnicodeEncodeError before printing anything. ``errors="replace"`` keeps a
+    terminal that genuinely cannot represent a glyph degrading to '?' instead
+    of crashing.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
 
 
 if __name__ == "__main__":
