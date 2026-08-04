@@ -39,6 +39,26 @@ ships in the box and is the top roadmap item.
 **Cost.** A linear rubric cannot represent interactions (e.g. budget matters
 more when urgency is high).
 
+## Update (2026-08): a model was trained and measured
+
+A TF-IDF + logistic-regression sentiment classifier was trained on real public
+data (SST-2) and evaluated against the lexicon. Results in [ML.md](../ML.md):
+it wins by 24.6 points on SST-2's held-out test set and loses by 1.8 points on
+the sales-conversation evaluation set. It therefore ships opt-in, not as the
+default.
+
+This refines rather than reverses the decision above. The distinction that
+matters:
+
+- **Labelled sentiment data exists** (SST-2), so the sentiment *component* can
+  now be trained and measured. It was, and the honest reading of the numbers
+  is that it does not yet help in this domain.
+- **Labelled conversion outcomes still do not exist**, so the *lead score* —
+  the thing this ADR is actually about — remains a documented rubric. Nothing
+  in the sentiment work makes it predictive of revenue.
+
+Sentiment is worth 10 of 100 points. Improving it does not calibrate the score.
+
 ## Revisit if
 
 An evaluation on ≥200 labelled calls exists. Then ship a learned model

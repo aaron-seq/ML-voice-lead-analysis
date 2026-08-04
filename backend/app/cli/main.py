@@ -221,6 +221,28 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_train(args: argparse.Namespace) -> int:
+    """Fetch real corpora, train the sentiment classifier, report honestly."""
+    try:
+        from app.ml.train import train
+    except ImportError:
+        print(
+            "error: training extras are not installed.\n"
+            "       pip install -r requirements-ml.txt",
+            file=sys.stderr,
+        )
+        return 2
+
+    try:
+        report = train()
+    except Exception as exc:
+        print(f"error: training failed: {exc}", file=sys.stderr)
+        return 1
+
+    print(report.render())
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
@@ -269,6 +291,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     evaluate_cmd.add_argument("csv")
     evaluate_cmd.set_defaults(func=cmd_evaluate)
+
+    train_cmd = subparsers.add_parser(
+        "train", help="Train the sentiment classifier on real public data"
+    )
+    train_cmd.set_defaults(func=cmd_train)
 
     serve = subparsers.add_parser("serve", help="Run the API server")
     serve.add_argument("--host")

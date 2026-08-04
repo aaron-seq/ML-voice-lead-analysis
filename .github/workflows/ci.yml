@@ -14,7 +14,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.11'
-  NODE_VERSION: '20'
+  NODE_VERSION: '22'
 
 jobs:
   backend:
@@ -74,6 +74,17 @@ jobs:
       - name: Benchmarks
         working-directory: backend
         run: pytest tests/test_benchmarks.py -s -q
+
+      # Retrains the sentiment model on real data and re-runs the comparison
+      # against the lexicon baseline. Non-blocking: it needs network access to
+      # fetch SST-2, and a corpus mirror being down must not fail an unrelated
+      # PR. The numbers appear in the job log.
+      - name: Train and evaluate sentiment model
+        continue-on-error: true
+        working-directory: backend
+        run: |
+          pip install -r requirements-ml.txt
+          python -m app.cli.main train
 
       - name: Upload coverage
         if: always()

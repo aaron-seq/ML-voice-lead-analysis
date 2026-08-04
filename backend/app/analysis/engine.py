@@ -55,6 +55,7 @@ class AnalysisEngine:
             build_analyzer(
                 use_transformer=settings.enable_transformer_sentiment,
                 model_name=settings.transformer_model,
+                use_trained=settings.enable_trained_sentiment,
             )
         )
 

@@ -108,6 +108,13 @@ class Settings(BaseSettings):
         "the lexicon analyzer needs no model download and is deterministic.",
     )
     transformer_model: str = "cardiffnlp/twitter-roberta-base-sentiment-latest"
+    enable_trained_sentiment: bool = Field(
+        False,
+        description="Use the SST-2-trained classifier instead of the lexicon. "
+        "Off by default because it is measurably better on SST-2 (0.814 vs "
+        "0.568) and slightly worse on sales language (0.600 vs 0.618) -- see "
+        "docs/ML.md. Requires requirements-ml.txt and a trained model.",
+    )
 
     # -- Observability ----------------------------------------------------
     log_level: str = "INFO"

@@ -167,6 +167,11 @@ their costs: [docs/adr/](docs/adr/).
 
 Read this before deciding whether CallSense fits your team.
 
+- **Sentiment has a trained-model option, and it is off on purpose.** A
+  classifier trained on real data (SST-2) beats the lexicon by 24.6 points on
+  that corpus's own test set and loses by 1.8 points on sales language — domain
+  shift, measured rather than assumed. Full numbers and the reasoning:
+  [docs/ML.md](docs/ML.md).
 - **The lead score is a documented rubric, not a trained model.** The weights in
   [`scoring.py`](backend/app/analysis/scoring.py) encode standard sales
   qualification practice. They have **not** been validated against conversion
@@ -195,6 +200,7 @@ Read this before deciding whether CallSense fits your team.
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Component map, data flow, design decisions and their trade-offs |
 | [API.md](docs/API.md) | Full endpoint reference with examples |
 | [SCORING.md](docs/SCORING.md) | The rubric: every weight, threshold and risk flag, and how to tune them |
+| [ML.md](docs/ML.md) | The trained sentiment model: real data, real metrics, and why it is not the default |
 | [CONFIGURATION.md](docs/CONFIGURATION.md) | Every environment variable |
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Docker, Postgres, S3, reverse proxy, production checklist |
 | [SECURITY.md](docs/SECURITY.md) | Auth model, threat model, what is and is not protected |
@@ -213,6 +219,7 @@ callsense analyse call.txt              # analyse one transcript, print a report
 callsense analyse call.txt --json       # machine-readable output
 callsense import ./transcripts          # bulk-load a directory
 callsense evaluate labelled_calls.csv   # validate the rubric against outcomes
+callsense train                         # train the sentiment model on real data
 callsense keygen --role analyst         # mint an API key
 callsense serve                         # run the API
 ```

@@ -17,8 +17,17 @@ node_modules/
 out/
 *.tsbuildinfo
 
-# Application data — transcripts and analyses are customer data.
-data/
+# Runtime application data — transcripts and analyses are customer data.
+# Anchored to the repo root: git cannot re-include a path whose parent
+# directory is excluded, so an unanchored `data/` would also swallow
+# backend/data/eval, which must stay tracked.
+/data/
+
+# Downloaded corpora and trained model artifacts are regenerable with
+# `python -m app.cli.main train`. backend/data/eval is deliberately NOT
+# ignored — the sales evaluation set is hand-labelled and irreplaceable.
+backend/data/corpora/
+backend/data/models/
 *.db
 *.sqlite3
 

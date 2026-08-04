@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import math
+from pathlib import Path
 from typing import Protocol
 
 from app.analysis import lexicons
@@ -162,10 +163,65 @@ class TransformerSentimentAnalyzer:
         return _clamp(score)
 
 
+class TrainedSentimentAnalyzer:
+    """TF-IDF + logistic-regression classifier trained on SST-2.
+
+    Opt-in, NOT the default, and the reason is measured rather than assumed.
+    On SST-2's own held-out test set this model scores 0.814 against the
+    lexicon's 0.568 -- a 24-point win. On the sales-conversation evaluation set
+    (backend/data/eval/sales_sentiment.tsv) it scores 0.600 against the
+    lexicon's 0.618, i.e. slightly *worse* on the domain this product serves.
+
+    That is domain shift, and it is why this analyzer defaults to off: a model
+    that wins on film criticism and loses on sales calls would be a regression
+    shipped behind an impressive-looking accuracy number.
+
+    Re-run `python -m app.cli.main train` after adding in-domain training data
+    and the trade-off may invert; the comparison prints on every run.
+    """
+
+    name = "trained-tfidf-logreg-v1"
+
+    def __init__(self, model_dir: Path | None = None) -> None:
+        from app.ml.train import load_model
+
+        self._pipeline = load_model(model_dir)
+        if self._pipeline is None:
+            raise RuntimeError(
+                "No trained model found. Run `python -m app.cli.main train` "
+                "(requires: pip install -r requirements-ml.txt)."
+            )
+
+    def score_text(self, text: str) -> float:
+        if not text.strip():
+            return 0.0
+        # predict_proba gives P(positive); map onto the engine's [-1, 1]
+        # contract so this is a drop-in for the lexicon analyzer.
+        probability = float(self._pipeline.predict_proba([text])[0][1])
+        return _clamp(probability * 2.0 - 1.0)
+
+
 def build_analyzer(
-    use_transformer: bool = False, model_name: str = ""
+    use_transformer: bool = False,
+    model_name: str = "",
+    use_trained: bool = False,
 ) -> SentimentAnalyzer:
-    """Return the configured analyzer, degrading to lexicon on any failure."""
+    """Return the configured analyzer, degrading to lexicon on any failure.
+
+    Every alternative degrades rather than raises: a missing model file or an
+    uninstalled extra must not take call analysis down.
+    """
+    if use_trained:
+        try:
+            trained = TrainedSentimentAnalyzer()
+            logger.info("Using trained sentiment analyzer: %s", trained.name)
+            return trained
+        except Exception as exc:
+            logger.warning(
+                "Trained sentiment model unavailable (%s); using lexicon analyzer",
+                exc,
+            )
+
     if use_transformer:
         try:
             analyzer = TransformerSentimentAnalyzer(model_name)
