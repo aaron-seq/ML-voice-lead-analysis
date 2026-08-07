@@ -19,7 +19,7 @@ would have to be true to call it done.
 - Talk metrics, topics, extractive summaries
 - REST API, CLI, dashboard, CSV export
 - API-key auth with three roles, audit log, rate limiting
-- 159 tests; CI running lint, types, tests, Postgres, and an end-to-end smoke
+- 194 tests; CI running lint, types, tests, Postgres, and an end-to-end smoke
 
 ---
 

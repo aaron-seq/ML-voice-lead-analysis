@@ -55,8 +55,10 @@ def _download(url: str, destination: Path) -> Path:
     # Written to a temp file first so an interrupted download cannot leave a
     # truncated corpus that silently trains a worse model.
     tmp = destination.with_suffix(destination.suffix + ".part")
-    # nosec B310 - the scheme is validated to be https immediately above, which
-    # is the concern this rule exists to catch.
+    # B310 is suppressed on the call below because the scheme is validated to
+    # be https immediately above, which is the concern that rule exists to
+    # catch. (The suppression must stay inline; a bandit directive on its own
+    # line makes the prose after it parse as a list of test ids.)
     with urllib.request.urlopen(url, timeout=60) as response:  # nosec B310
         tmp.write_bytes(response.read())
     tmp.replace(destination)

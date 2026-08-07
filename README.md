@@ -148,15 +148,19 @@ same score), and every finding carries the transcript span that produced it. A
 transformer sentiment analyzer is available as an opt-in upgrade
 (`ENABLE_TRANSFORMER_SENTIMENT=true`).
 
-Measured, not asserted — `pytest tests/test_benchmarks.py -s` reproduces these:
+Measured, not asserted — `pytest tests/test_benchmarks.py -s` prints these on
+your own hardware:
 
 | Measurement | Result |
 |---|---|
-| 40-turn call (396 words) | **2.2 ms** mean, 2.4 ms p95 |
-| Per 1,000 words | **5.0 ms** |
-| Sustained batch, single thread | **472 calls/s** |
-| Scaling: 10× the words | **7.6× the time** (sub-linear) |
-| Phrase matcher: 1 → 2,001 phrases | **1.05×** (first-token index) |
+| 40-turn call (396 words) | **2.4 ms** mean, 2.6 ms p95 |
+| Per 1,000 words | **5.6 ms** |
+| Sustained batch, single thread | **409 calls/s** |
+| Scaling: 10× the words | **7.8× the time** (sub-linear) |
+| Phrase matcher: 1 → 2,001 phrases | **1.00×** (first-token index) |
+
+Absolute figures move with the machine, so the test asserts the *shape* — a
+per-call ceiling plus the two ratios — rather than these exact numbers.
 
 Full detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Design decisions and
 their costs: [docs/adr/](docs/adr/).
@@ -252,7 +256,7 @@ Full reference: [docs/API.md](docs/API.md).
 cd backend
 pip install -r requirements-dev.txt
 
-pytest                                  # 208 tests
+pytest                                  # 241 tests
 pytest tests/test_benchmarks.py -s      # performance figures
 ruff check app tests                    # lint
 mypy app                                # types

@@ -9,12 +9,14 @@ to a README warning.
 
 from __future__ import annotations
 
+import json
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Environment(StrEnum):
@@ -52,7 +54,7 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8000
     api_prefix: str = "/api/v1"
-    cors_origins: list[str] = Field(
+    cors_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["http://localhost:3000", "http://127.0.0.1:3000"]
     )
     cors_origin_regex: str | None = Field(
@@ -91,7 +93,7 @@ class Settings(BaseSettings):
         description="When false the API runs open with an implicit admin "
         "principal. Forced on in staging/production.",
     )
-    api_keys: list[str] = Field(
+    api_keys: Annotated[list[str], NoDecode] = Field(
         default_factory=list,
         description="Static API keys in 'key:role' form, e.g. 'sk-abc:analyst'. "
         "Suitable for a single-team deployment; see docs/SECURITY.md for the "
@@ -130,11 +132,21 @@ class Settings(BaseSettings):
     @field_validator("cors_origins", "api_keys", mode="before")
     @classmethod
     def _split_csv(cls, value: object) -> object:
-        """Accept both JSON arrays and plain comma-separated env values."""
+        """Accept both JSON arrays and plain comma-separated env values.
+
+        The ``NoDecode`` annotation on both fields is load-bearing. Without it
+        pydantic-settings tries to JSON-decode any list-typed field inside the
+        env and dotenv sources, *before* a before-validator can run -- so the
+        comma-separated form this method exists to support raised
+        ``SettingsError`` at startup instead of ever reaching here. That broke
+        every documented way of configuring these two values: .env, a plain
+        environment variable, and docker-compose. The trade-off is that the
+        JSON form must now be decoded here rather than by the source.
+        """
         if isinstance(value, str):
             stripped = value.strip()
             if stripped.startswith("["):
-                return value  # let pydantic parse the JSON form
+                return json.loads(stripped)
             return [item.strip() for item in stripped.split(",") if item.strip()]
         return value
 

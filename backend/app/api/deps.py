@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analysis.engine import AnalysisEngine
 from app.core.config import Settings, get_settings
+from app.core.logging import principal_var
 from app.core.security import ANONYMOUS_ADMIN, ApiKeyRegistry, Principal, Role
 from app.db.repository import AuditRepository, CallRepository
 from app.db.session import get_session
@@ -42,7 +43,7 @@ async def get_principal(
     staging and production.
     """
     if not settings.auth_enabled:
-        return ANONYMOUS_ADMIN
+        return _record(request, ANONYMOUS_ADMIN)
 
     registry: ApiKeyRegistry = request.app.state.api_keys
     principal = registry.resolve(x_api_key)
@@ -50,6 +51,19 @@ async def get_principal(
     limiter = request.app.state.rate_limiter
     limiter.check(principal.id)
 
+    return _record(request, principal)
+
+
+def _record(request: Request, principal: Principal) -> Principal:
+    """Publish the caller to the logging context.
+
+    Both are needed. The ContextVar is what puts the principal on log lines
+    emitted inside the handler; request.state is how the access-log middleware
+    reads it back, since it runs in a parent task that cannot see a ContextVar
+    set here.
+    """
+    principal_var.set(principal.id)
+    request.state.principal = principal.id
     return principal
 
 

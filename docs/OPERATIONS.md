@@ -52,8 +52,8 @@ histogram_quantile(0.95,
   sum(rate(callsense_http_request_duration_seconds_bucket[5m])) by (le)) > 0.5
 ```
 
-**Audit.** `GET /api/v1/audit` lists ingest, re-analyse, delete and export
-events with principal and timestamp.
+**Audit.** `GET /api/v1/audit` (admin only) lists ingest, re-analyse, delete
+and export events with principal and timestamp.
 
 ## Common tasks
 
@@ -99,9 +99,12 @@ Measured on a single core (`pytest tests/test_benchmarks.py -s`):
 
 | | |
 |---|---|
-| 40-turn call (396 words) | 2.2 ms mean, 2.4 ms p95 |
-| Per 1,000 words | 5.0 ms |
-| Sustained batch, one thread | 472 calls/s |
+| 40-turn call (396 words) | 2.4 ms mean, 2.6 ms p95 |
+| Per 1,000 words | 5.6 ms |
+| Sustained batch, one thread | 409 calls/s |
+
+Absolute figures move with the machine; the test asserts a per-call ceiling and
+the scaling ratios rather than these exact numbers.
 
 The engine is therefore never the bottleneck — the database and blob storage
 are. A backlog of 100,000 transcripts imports in roughly four minutes of CPU.

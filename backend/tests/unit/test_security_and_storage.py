@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from app.core.config import Environment, Settings
@@ -147,6 +149,43 @@ class TestSettingsInvariants:
     def test_comma_separated_env_values_are_parsed(self):
         settings = Settings(cors_origins="http://a.test, http://b.test")
         assert settings.cors_origins == ["http://a.test", "http://b.test"]
+
+    # The tests below go through the *environment* and *dotenv* sources rather
+    # than Settings(...) keyword arguments. That distinction is the whole point:
+    # only those two sources JSON-decode list-typed fields, so a suite that
+    # exercised the init source alone reported a healthy parser while every real
+    # deployment -- .env, an env var, docker-compose -- died at startup with
+    # SettingsError before the app could serve a request.
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("http://a.test", ["http://a.test"]),
+            ("http://a.test,http://b.test", ["http://a.test", "http://b.test"]),
+            ("http://a.test, http://b.test", ["http://a.test", "http://b.test"]),
+            ('["http://a.test"]', ["http://a.test"]),
+        ],
+    )
+    def test_cors_origins_parses_from_a_real_env_var(self, monkeypatch, raw, expected):
+        monkeypatch.setenv("CORS_ORIGINS", raw)
+        assert Settings(_env_file=None).cors_origins == expected
+
+    def test_api_keys_parse_from_a_real_env_var(self, monkeypatch):
+        monkeypatch.setenv("AUTH_ENABLED", "true")
+        monkeypatch.setenv("API_KEYS", f"{VALID_KEY}:admin,{VALID_KEY}b:viewer")
+        assert Settings(_env_file=None).api_keys == [
+            f"{VALID_KEY}:admin",
+            f"{VALID_KEY}b:viewer",
+        ]
+
+    def test_the_shipped_env_example_actually_boots(self):
+        """The file README.md tells every new user to copy to .env."""
+        example = Path(__file__).resolve().parents[3] / ".env.example"
+        assert example.is_file(), "the documented .env.example is missing"
+        settings = Settings(_env_file=example)
+        assert settings.cors_origins == [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+        ]
 
 
 class TestLocalBlobStore:

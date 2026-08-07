@@ -91,9 +91,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url=settings.openapi_url,
     )
 
-    # Set eagerly as well as in the lifespan: dependencies resolve settings from
-    # app.state, and that must work even for a sub-application mounted without
-    # its own lifespan running.
+    # Make the injected settings authoritative for request-time dependencies
+    # too. Without this, `SettingsDep` resolved through the lru_cached
+    # `get_settings()` -- the process-wide object built from the environment --
+    # so `create_app(settings)` configured the middleware and routers from the
+    # argument while every endpoint silently read a different Settings. Passing
+    # auth_enabled or max_upload_bytes in had no effect on the running app.
+    #
+    # `SettingsDep` now depends on `get_app_settings`, which reads this. Set
+    # eagerly rather than only in the lifespan, so it also holds for a
+    # sub-application mounted without its own lifespan running. `main` fixed the
+    # same bug with `dependency_overrides[get_settings]`; that hook is the
+    # test-time override mechanism, and leaving it claimed here would both be
+    # inert (nothing depends on `get_settings` any more) and collide with a test
+    # that wants to override settings itself.
     app.state.settings = settings
 
     _register_middleware(app, settings)
