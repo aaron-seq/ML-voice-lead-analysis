@@ -21,7 +21,7 @@ python-multipart==0.0.32
 pydantic==2.14.0
 pydantic-settings==2.15.0
 
-sqlalchemy[asyncio]==2.0.51
+sqlalchemy[asyncio]==2.1.4
 aiosqlite==0.22.1
 
 python-dotenv==1.2.4

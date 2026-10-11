@@ -122,10 +122,16 @@ jobs:
         working-directory: backend
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt asyncpg
+          pip install -r requirements-dev.txt -r requirements-postgres.txt
 
-      # SQLite covers local development; this proves the same schema and
-      # queries work on the database production actually uses.
+      # SQLite covers local development; this runs the same integration suite
+      # against the database production actually uses.
+      #
+      # TEST_DATABASE_URL was exported here long before anything read it, so
+      # this job ran SQLite twice while claiming to prove Postgres worked. The
+      # `settings` fixture honours it now, and TestDatabaseUnderTest asserts
+      # the live engine really is speaking postgresql -- so a regression that
+      # quietly reverts to SQLite fails the job instead of passing it.
       - name: Test against PostgreSQL
         working-directory: backend
         env:

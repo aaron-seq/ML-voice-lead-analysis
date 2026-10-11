@@ -334,3 +334,42 @@ class TestAudit:
         actions = [e["action"] for e in client.get(f"{API}/audit").json()]
         assert "call.ingest" in actions
         assert "call.delete" in actions
+
+
+class TestDatabaseUnderTest:
+    """Guards that the `Backend (PostgreSQL)` CI job tests PostgreSQL.
+
+    It did not. The workflow exported TEST_DATABASE_URL, the `settings`
+    fixture hardcoded a SQLite file, and the job ran SQLite while its own
+    comment claimed it proved "the same schema and queries work on the
+    database production actually uses". Nothing read the variable.
+
+    A green job asserting something it never exercised is worse than no job:
+    it is the reason a SQLAlchemy major upgrade looked validated against
+    Postgres when it had never touched it. These tests fail loudly rather
+    than let that recur.
+    """
+
+    def test_the_configured_url_is_the_one_actually_used(self, settings):
+        from tests.conftest import TEST_DATABASE_URL
+
+        if TEST_DATABASE_URL:
+            assert settings.database_url == TEST_DATABASE_URL
+        else:
+            assert settings.database_url.startswith("sqlite+aiosqlite://")
+
+    def test_the_live_engine_speaks_the_expected_dialect(self, client, settings):
+        """Asserted against the running engine, not the setting, so a URL that
+        silently fails over to a different backend is still caught."""
+        from app.db import session as session_module
+
+        dialect = session_module._engine.dialect.name
+        expected = "postgresql" if "postgresql" in settings.database_url else "sqlite"
+        assert dialect == expected
+
+    def test_a_write_round_trips_on_whichever_database_is_configured(self, client):
+        """The point of running twice: the same query path on both backends."""
+        created = create_call(client, title="dialect round trip")
+        fetched = client.get(f"{API}/calls/{created['id']}")
+        assert fetched.status_code == 200
+        assert fetched.json()["title"] == "dialect round trip"

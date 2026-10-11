@@ -269,7 +269,7 @@ Full reference: [docs/API.md](docs/API.md).
 cd backend
 pip install -r requirements-dev.txt
 
-pytest                                  # 241 tests
+pytest                                  # 298 tests
 pytest tests/test_benchmarks.py -s      # performance figures
 ruff check app tests                    # lint
 mypy app                                # types

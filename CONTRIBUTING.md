@@ -8,13 +8,30 @@ cd ML-voice-lead-analysis/backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 
-pytest                                  # 241 tests, ~10s
+pytest                                  # 298 tests, ~10s
 pytest tests/test_benchmarks.py -s      # performance figures
 ruff check app tests                    # lint
 mypy app                                # types
 bandit -q -r app                        # security static analysis
 pip-audit -r requirements.txt --strict  # dependency advisories
 ```
+
+### Running against PostgreSQL
+
+Tests use a per-test SQLite file by default. Set `TEST_DATABASE_URL` to run the
+integration suite against the database production uses instead:
+
+```bash
+pip install -r requirements-postgres.txt
+TEST_DATABASE_URL=postgresql+asyncpg://callsense:callsense@localhost:5432/callsense_test \
+  pytest tests/integration
+```
+
+A shared server has no per-test file isolation, so every table is dropped and
+recreated around each test. `TestDatabaseUnderTest` asserts the live engine is
+really speaking the dialect you asked for — the variable was previously
+exported by CI and read by nothing, so that job ran SQLite twice while
+reporting that it covered PostgreSQL.
 
 Frontend:
 
