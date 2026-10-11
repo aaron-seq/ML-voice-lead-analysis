@@ -110,6 +110,55 @@ class TestHelpers:
         assert 'outcome="meeting_booked"' in output
 
 
+class TestDeclaredMetrics:
+    """A declared metric must appear before anything increments it.
+
+    This is the contract the end-to-end smoke job relied on and the code did
+    not provide: it boots a fresh server, which has analysed nothing, and
+    asserted `callsense_analyses_total` was present. Lazily-registered metrics
+    made that assertion fail against a perfectly healthy server.
+    """
+
+    def test_declared_counter_renders_with_no_observations(self, reg):
+        reg.declare_counter("widgets_total", "Widgets seen.")
+        output = reg.render()
+        assert "# HELP widgets_total Widgets seen." in output
+        assert "# TYPE widgets_total counter" in output
+
+    def test_declared_histogram_renders_with_no_observations(self, reg):
+        reg.declare_histogram("widget_seconds", "Widget latency.")
+        assert "# TYPE widget_seconds histogram" in reg.render()
+
+    def test_declaring_does_not_invent_a_zero_series(self, reg):
+        """Prometheus has no 'zero' for an unlabelled-yet counter; emitting
+        `widgets_total 0` would be a series nobody observed."""
+        reg.declare_counter("widgets_total", "Widgets seen.")
+        assert "widgets_total 0" not in reg.render()
+
+    def test_declaration_survives_reset(self, reg):
+        reg.declare_counter("widgets_total", "Widgets seen.")
+        reg.increment("widgets_total", {"kind": "a"})
+        reg.reset()
+        output = reg.render()
+        assert "# TYPE widgets_total counter" in output
+        assert 'kind="a"' not in output
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "callsense_http_requests_total",
+            "callsense_http_request_duration_seconds",
+            "callsense_analyses_total",
+            "callsense_analysis_duration_seconds",
+            "callsense_ingestion_failures_total",
+        ],
+    )
+    def test_every_documented_metric_is_present_on_a_cold_registry(self, name):
+        """docs/OPERATIONS.md lists these; a scrape must never omit one."""
+        registry.reset()
+        assert f"# TYPE {name}" in registry.render()
+
+
 class TestMetricsEndpoint:
     def test_endpoint_serves_prometheus_text(self, client):
         response = client.get("/metrics")

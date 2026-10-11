@@ -30,6 +30,8 @@ The score is currently unvalidated. Nothing else matters as much as fixing that.
 | Item | Why | Done when |
 |---|---|---|
 | **Calibrate against real outcomes** | The rubric is untested against conversion | A public evaluation on ≥ 200 labelled calls, with AUC and per-band conversion published in `SCORING.md` |
+| **Settle the rep-monologue threshold** | Its sign is genuinely unknown: 2.5 min is discovery-call coaching guidance, but published cold-call research says longer rep bursts correlate with *success* | The flag is either re-grounded in measured outcomes or removed |
+| **Calibrate the unscored dynamics** | Interruptions, latency, speech rate and trajectory are measured and deliberately carry no weight ([ADR 0006](adr/0006-conversation-dynamics-from-timings.md)) | Each is either given a weight justified by labelled data, or documented as diagnostic-only for good |
 | **Golden-transcript regression suite** | Prevent silent scoring drift | 30 annotated transcripts with expected bands; CI fails on unexplained change |
 | **Lexicon coverage report** | Quantify the recall limit honestly | A command reporting what fraction of prospect turns matched nothing |
 | **Inter-rater baseline** | Know what "good" is | Two humans label 50 calls; report human–human agreement alongside engine–human |
@@ -46,7 +48,7 @@ Analysis nobody sees changes nothing.
 | Item | Notes |
 |---|---|
 | **CRM sync** | HubSpot and Salesforce first: push score, outcome and next actions onto the contact/opportunity |
-| **Audio ingestion** | Accept media, run Whisper, feed the existing pipeline. Keep ASR pluggable |
+| **Audio ingestion** | Accept media, run ASR, feed the existing pipeline. Keep ASR pluggable. The target output is a *timed, diarised* transcript, which `app/analysis/dynamics.py` already consumes — so the consumer exists and has a tested contract |
 | **Dialer/meeting integrations** | Zoom, Gong, Aircall, Google Meet transcript webhooks |
 | **Async job queue** | Needed once audio (minutes, not milliseconds) is in scope; API returns 202 + status polling |
 | **Scheduled digests** | "Your 5 hottest calls and 3 unaddressed objections this week" |

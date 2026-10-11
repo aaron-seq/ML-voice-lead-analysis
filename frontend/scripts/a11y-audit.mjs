@@ -57,9 +57,26 @@ const openFirstCall = async (page) => {
   await page.waitForTimeout(1200);
 };
 
+// The conversation-dynamics panel only renders for a call whose transcript
+// carried timings, so auditing "the first call" would silently skip it
+// depending on import order. `stark timed discovery` is the timed example
+// seeded from examples/transcripts.
+const openTimedCall = async (page) => {
+  const row = page.locator('.row', { hasText: 'stark timed discovery' }).first();
+  if ((await row.count()) === 0) {
+    throw new Error(
+      'No timed call found. Seed examples/transcripts so the dynamics panel is audited.',
+    );
+  }
+  await row.click();
+  await page.waitForTimeout(1200);
+};
+
 await audit('Call list', null);
 await audit('Call detail', openFirstCall);
 await audit('Call detail', openFirstCall, 'dark');
+await audit('Conversation dynamics', openTimedCall);
+await audit('Conversation dynamics', openTimedCall, 'dark');
 await audit('Score breakdown expanded', async (page) => {
   await openFirstCall(page);
   const toggle = page.locator('.evidence-toggle').first();

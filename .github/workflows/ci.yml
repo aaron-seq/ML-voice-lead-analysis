@@ -234,4 +234,17 @@ jobs:
           curl -sf "localhost:8000/api/v1/calls?page_size=5" | grep -q '"lead_band"'
           curl -sf localhost:8000/api/v1/analytics/pipeline | grep -q 'band_breakdown'
           curl -sf localhost:8000/api/v1/export/calls.csv | head -1 | grep -q 'lead_score'
-          curl -sf localhost:8000/metrics | grep -q 'callsense_analyses_total'
+
+          # Analyse through HTTP, not just the CLI: the import above runs in a
+          # separate process, so without this the server under test has never
+          # executed the engine and the analysis metrics below prove nothing.
+          curl -sf -X POST localhost:8000/api/v1/calls \
+            -H 'Content-Type: application/json' \
+            -d '{"title":"smoke","transcript":"Rep: Hi, can I ask how you handle pipelines today?\nProspect: It is a mess, we have budget approved and need this by March.\nRep: Shall we book a follow up on Tuesday?\nProspect: Yes, Tuesday works."}' \
+            | tee /dev/stderr | grep -q '"lead_band"'
+
+          # Declared metrics must render on a cold worker too, so assert both:
+          # the name is always exposed, and a real analysis moved the counter.
+          curl -sf localhost:8000/metrics | tee /tmp/metrics.txt | grep -q '# TYPE callsense_analyses_total counter'
+          grep -q '^callsense_analyses_total{' /tmp/metrics.txt
+          grep -q 'callsense_conversation_dynamics_total' /tmp/metrics.txt

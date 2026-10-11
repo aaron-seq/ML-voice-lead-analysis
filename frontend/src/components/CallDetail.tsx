@@ -23,6 +23,7 @@ import {
 } from '@/lib/format';
 import type { CallDetail as CallDetailType, Evidence } from '@/lib/types';
 
+import { ConversationDynamics } from './ConversationDynamics';
 import { ScoreBreakdown } from './ScoreBreakdown';
 import { SentimentTimeline } from './SentimentTimeline';
 import { BandBadge } from './ui/BandBadge';
@@ -280,8 +281,20 @@ export function CallDetailView({
             </dd>
           </div>
           <div>
-            <dt>Talk ratio (rep)</dt>
-            <dd>{formatPercent(analysis.talk_metrics.rep_talk_ratio)}</dd>
+            <dt>
+              {analysis.dynamics.available ? 'Talk time (rep)' : 'Talk ratio (rep)'}
+            </dt>
+            <dd>
+              {formatPercent(
+                analysis.dynamics.available
+                  ? analysis.dynamics.rep_talk_time_ratio
+                  : analysis.talk_metrics.rep_talk_ratio,
+              )}
+              <span className="muted small">
+                {' '}
+                {analysis.dynamics.available ? 'of airtime' : 'of words'}
+              </span>
+            </dd>
           </div>
           <div>
             <dt>Rep questions</dt>
@@ -291,6 +304,8 @@ export function CallDetailView({
 
         <SentimentTimeline points={analysis.sentiment.timeline} />
       </section>
+
+      <ConversationDynamics dynamics={analysis.dynamics} />
 
       {analysis.summary.key_quotes.length > 0 && (
         <section className="panel" aria-labelledby="quotes-heading">

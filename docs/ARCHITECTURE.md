@@ -13,6 +13,7 @@ backend/app/
 │   ├── sentiment.py       Lexicon analyzer (+ optional transformer)
 │   ├── signals.py         Buying signals and objections, with evidence
 │   ├── outcome.py         Outcome, summary, next actions, talk metrics
+│   ├── dynamics.py        Conversation dynamics from segment timings
 │   ├── scoring.py         The weighted rubric
 │   ├── engine.py          Orchestration — the one public entry point
 │   └── evaluation.py      Rubric validation against labelled outcomes

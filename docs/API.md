@@ -134,6 +134,51 @@ Returns `{ "analysis": {...}, "transcript": {...} }`.
 Full call with its analysis. Add `?include_transcript=true` for the parsed,
 role-attributed turns.
 
+#### `analysis.dynamics`
+
+Conversation dynamics derived from segment timings. **Always present**, so a
+client branches on `available` rather than on the key existing. Every numeric
+field is `null` when `available` is `false` — nothing is estimated from word
+counts.
+
+```json
+{
+  "available": true,
+  "unavailable_reason": null,
+  "call_span_s": 220.6,
+  "rep_talk_seconds": 68.5,
+  "prospect_talk_seconds": 136.4,
+  "rep_talk_time_ratio": 0.3343,
+  "longest_rep_monologue_s": 12.6,
+  "longest_prospect_turn_s": 33.3,
+  "turn_count": 16,
+  "interruptions_by_rep": 1,
+  "interruptions_by_prospect": 0,
+  "overtalk_seconds": 5.7,
+  "rep_speech_rate_wpm": 123.5,
+  "prospect_speech_rate_wpm": 119.6,
+  "rep_response_latency_s": 0.63,
+  "prospect_response_latency_s": 2.2,
+  "dead_air_ratio": 0.097,
+  "prospect_share_by_third": [0.6319, 0.6967, 0.6706],
+  "observations": ["Rep held only 33% of the talk time, ..."]
+}
+```
+
+For an untimed transcript the block reports why:
+
+```json
+{
+  "available": false,
+  "unavailable_reason": "Transcript carries no usable segment timings. Export as WebVTT, SRT or AWS Transcribe JSON to get conversation dynamics.",
+  "rep_talk_time_ratio": null
+}
+```
+
+`interruptions_by_rep: 0` is a measurement, not missing data — render against
+`available`, never truthiness. Meanings and the scoring position of each field
+are in [SCORING.md](SCORING.md#conversation-dynamics).
+
 ### `PATCH /api/v1/calls/{call_id}`  *(analyst)*
 
 Update `title`, `owner` or `tags`. Does not re-run analysis.

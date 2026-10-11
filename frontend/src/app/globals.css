@@ -888,6 +888,57 @@ button:disabled {
   margin-bottom: 6px;
 }
 
+/* Prospect's share of talk time per third of the call. Three bars rather than
+   a line: there are only three values, and a line between three points
+   implies a continuity the measurement does not have. */
+.trajectory {
+  display: flex;
+  gap: 20px;
+  align-items: flex-end;
+  padding: 4px 0 0;
+  /* Constrained so three bars read as one chart rather than three widely
+     separated stats. */
+  max-width: 340px;
+}
+
+.trajectory-step {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.trajectory-track {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  max-width: 72px;
+  height: 64px;
+  background: var(--surface-3);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.trajectory-fill {
+  width: 100%;
+  min-height: 2px;
+  background: var(--accent);
+  border-radius: 3px 3px 0 0;
+}
+
+.trajectory-value {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.trajectory-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 .sentiment-svg {
   width: 100%;
   height: auto;

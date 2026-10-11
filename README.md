@@ -37,6 +37,7 @@ already have, with no per-seat cost and no data leaving your network.
 | **Next-best-action** | Prioritised, time-boxed, with the reason it was suggested |
 | **Deal risk flags** | No decision maker, no next step, budget unconfirmed, rep monologue, cooling sentiment |
 | **Conversation metrics** | Talk ratio, question counts, sentiment trajectory across the call |
+| **Conversation dynamics** | From timed transcripts: talk time in seconds, interruptions, overtalk, response latency, speech rate, dead air, and the prospect's share of each third of the call |
 | **Pipeline analytics** | Band distribution, recurring objections, team-wide coaching signals |
 | **Export** | One-row-per-call CSV for your CRM or spreadsheet |
 | **Observability** | Structured JSON logs with request correlation, Prometheus metrics at `/metrics` |
@@ -189,7 +190,19 @@ Read this before deciding whether CallSense fits your team.
 - **Lexicon-based detection has real recall limits.** Novel phrasings are missed.
   The trade-off is deliberate: precision over recall, and total explainability.
 - **No audio pipeline.** CallSense analyses transcripts. Bring your own ASR
-  (Whisper, AWS Transcribe, your dialer's export).
+  (Whisper, AWS Transcribe, your dialer's export). If that ASR emits timings —
+  WebVTT, SRT or AWS Transcribe JSON — you also get conversation dynamics;
+  plain-text transcripts are untimed by nature and that whole block reports as
+  unavailable rather than being estimated from word counts.
+- **Most conversation-dynamics fields are deliberately unscored.** Talk-time
+  ratio and monologue length feed the score because they have published
+  associations with outcomes. Interruptions, response latency, speech rate and
+  dead air do not, so they are reported and charted and given no weight. See
+  [ADR 0006](docs/adr/0006-conversation-dynamics-from-timings.md).
+- **The rep-monologue risk flag may be backwards for cold calls.** The 2.5-minute
+  threshold is coaching guidance for discovery calls; the published cold-call
+  research reports that *successful* cold calls contain longer rep bursts. It
+  costs 6 points and is the first thing to calibrate against real outcomes.
 - **Auth is static API keys with three roles.** Adequate for a single team behind
   a VPN; it is not multi-tenant SSO. See [docs/SECURITY.md](docs/SECURITY.md).
 - **Speaker-role inference is heuristic**, roughly reliable on two-party calls
@@ -203,7 +216,7 @@ Read this before deciding whether CallSense fits your team.
 |---|---|
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Component map, data flow, design decisions and their trade-offs |
 | [API.md](docs/API.md) | Full endpoint reference with examples |
-| [SCORING.md](docs/SCORING.md) | The rubric: every weight, threshold and risk flag, and how to tune them |
+| [SCORING.md](docs/SCORING.md) | The rubric: every weight, threshold and risk flag, plus conversation dynamics and how to tune them |
 | [ML.md](docs/ML.md) | The trained sentiment model: real data, real metrics, and why it is not the default |
 | [CONFIGURATION.md](docs/CONFIGURATION.md) | Every environment variable |
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Docker, Postgres, S3, reverse proxy, production checklist |

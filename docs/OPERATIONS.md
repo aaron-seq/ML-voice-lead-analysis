@@ -27,10 +27,26 @@ duration is recorded per call in `metadata.processing_ms`.
 | `callsense_analyses_total` | counter | `band`, `outcome` |
 | `callsense_analysis_duration_seconds` | histogram | — |
 | `callsense_ingestion_failures_total` | counter | `reason` |
+| `callsense_conversation_dynamics_total` | counter | `available` |
 | `callsense_uptime_seconds` | gauge | — |
 
 `route` is the **route template** (`/api/v1/calls/{call_id}`), not the request
 path, so cardinality does not grow with the number of calls.
+
+**Every metric above is declared at startup**, so its `# HELP` and `# TYPE`
+headers appear on a scrape even before anything has incremented it. Without
+that, `rate(callsense_analyses_total[5m])` over an idle worker returns *no
+data* rather than 0, and an alert on an absent series behaves differently from
+one on a zero series — a quiet worker becomes indistinguishable from a broken
+scrape.
+
+`callsense_conversation_dynamics_total{available="false"}` is worth watching
+even though it is not an error. It counts analyses whose transcript carried no
+usable timings, which means talk balance was measured in words rather than
+seconds and the dynamics panel was empty. That is a property of *your*
+transcript export, not of this service: a team seeing it on every call should
+switch to WebVTT, SRT or AWS Transcribe JSON. See
+[SCORING.md](SCORING.md#conversation-dynamics).
 
 **Counters are per worker process.** With 4 workers, a single load-balanced
 scrape sees roughly a quarter of the traffic. Scrape each worker as its own
@@ -50,6 +66,12 @@ sum(rate(callsense_ingestion_failures_total[15m])) > 0.1
 # p95 request latency above half a second
 histogram_quantile(0.95,
   sum(rate(callsense_http_request_duration_seconds_bucket[5m])) by (le)) > 0.5
+
+# Most of the corpus is arriving without timings, so talk balance is being
+# measured in words and the dynamics panel is empty. Not an outage — a
+# transcript-export problem worth telling the customer about.
+sum(rate(callsense_conversation_dynamics_total{available="false"}[1h]))
+  / sum(rate(callsense_conversation_dynamics_total[1h])) > 0.8
 ```
 
 **Audit.** `GET /api/v1/audit` (admin only) lists ingest, re-analyse, delete

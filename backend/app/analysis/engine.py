@@ -15,6 +15,7 @@ import logging
 import time
 
 from app.analysis import diarization, parsing, scoring, signals
+from app.analysis import dynamics as dynamics_mod
 from app.analysis import outcome as outcome_mod
 from app.analysis.sentiment import (
     LexiconSentimentAnalyzer,
@@ -23,7 +24,7 @@ from app.analysis.sentiment import (
     build_analyzer,
 )
 from app.core.config import Settings
-from app.core.metrics import record_analysis
+from app.core.metrics import record_analysis, record_dynamics
 from app.domain.models import (
     ENGINE_VERSION,
     AnalysisMetadata,
@@ -104,12 +105,23 @@ class AnalysisEngine:
         talk = outcome_mod.compute_talk_metrics(transcript)
         call_outcome = outcome_mod.classify_outcome(transcript)
 
+        call_dynamics = dynamics_mod.analyse_dynamics(transcript)
+        call_dynamics.observations = dynamics_mod.describe(call_dynamics)
+        if not call_dynamics.available and transcript.duration_s is not None:
+            # The transcript has an overall duration but not per-segment
+            # timings, so it is worth saying why the dynamics block is empty.
+            warnings.append(
+                "Conversation dynamics unavailable: "
+                f"{call_dynamics.unavailable_reason}"
+            )
+
         lead_score = scoring.score_lead(
             transcript=transcript,
             signals=detected_signals,
             objections=objections,
             sentiment=sentiment,
             talk=talk,
+            dynamics=call_dynamics,
             outcome_is_rejection=call_outcome.label in outcome_mod.REJECTION_OUTCOMES,
         )
 
@@ -139,6 +151,10 @@ class AnalysisEngine:
             outcome=call_outcome.label.value,
             duration_s=elapsed_ms / 1000.0,
         )
+        # Tracks what share of a team's corpus actually carries timings, which
+        # is the difference between this product measuring talk balance in
+        # seconds or in words. Actionable: it points at the transcript export.
+        record_dynamics(available=call_dynamics.available)
         logger.info(
             "Analysed call",
             extra={
@@ -162,6 +178,7 @@ class AnalysisEngine:
             outcome=call_outcome,
             next_actions=next_actions,
             talk_metrics=talk,
+            dynamics=call_dynamics,
             topics=topics,
             metadata=AnalysisMetadata(
                 engine_version=ENGINE_VERSION,
@@ -172,6 +189,7 @@ class AnalysisEngine:
                     "scoring": "weighted-rubric-v1",
                     "outcome": "lexicon-v1",
                     "diarization": "heuristic-v1",
+                    "dynamics": "timings-v1",
                 },
                 processing_ms=round(elapsed_ms, 2),
                 word_count=transcript.word_count,

@@ -11,3 +11,4 @@ what would make us revisit it.
 | [0003](0003-explainable-rubric-over-learned-model.md) | Explainable weighted rubric instead of a trained classifier | Accepted |
 | [0004](0004-sql-plus-blob-storage.md) | SQL for analyses, blob storage for transcripts | Accepted |
 | [0005](0005-no-signing-secret.md) | No `SECRET_KEY` until something signs something | Accepted |
+| [0006](0006-conversation-dynamics-from-timings.md) | Conversation dynamics from transcript timings, before audio | Accepted |

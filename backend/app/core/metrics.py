@@ -54,7 +54,33 @@ class MetricsRegistry:
         self._histograms: dict[str, dict[_LabelKey, list[int]]] = defaultdict(dict)
         self._histogram_sums: dict[str, dict[_LabelKey, float]] = defaultdict(dict)
         self._histogram_help: dict[str, str] = {}
+        # Names declared up front. A declared metric renders its HELP and TYPE
+        # headers even with no observations, so a scrape of an idle worker says
+        # "zero so far" instead of omitting the metric entirely.
+        self._declared_counters: set[str] = set()
+        self._declared_histograms: set[str] = set()
         self._started = time.monotonic()
+
+    def declare_counter(self, name: str, help_text: str) -> None:
+        """Register a counter before it is first incremented.
+
+        Without this, a metric only appears once something increments it. That
+        breaks two things. Operationally, `rate(...[5m])` over an absent series
+        returns no data rather than 0, so a quiet worker is indistinguishable
+        from a broken scrape and alerts on it behave differently. Practically,
+        the end-to-end smoke test asserted on `callsense_analyses_total` and
+        failed against a freshly booted server that had not yet analysed
+        anything -- which is the correct server behaviour and a wrong metric
+        contract.
+        """
+        with self._lock:
+            self._declared_counters.add(name)
+            self._counter_help.setdefault(name, help_text)
+
+    def declare_histogram(self, name: str, help_text: str) -> None:
+        with self._lock:
+            self._declared_histograms.add(name)
+            self._histogram_help.setdefault(name, help_text)
 
     @staticmethod
     def _key(labels: dict[str, str] | None) -> _LabelKey:
@@ -106,20 +132,22 @@ class MetricsRegistry:
         """Prometheus text exposition format (version 0.0.4)."""
         lines: list[str] = []
         with self._lock:
-            for name, counter_series in sorted(self._counters.items()):
+            counter_names = sorted(self._declared_counters | self._counters.keys())
+            for name in counter_names:
                 if help_text := self._counter_help.get(name):
                     lines.append(f"# HELP {name} {help_text}")
                 lines.append(f"# TYPE {name} counter")
-                for labels, value in sorted(counter_series.items()):
+                for labels, value in sorted(self._counters.get(name, {}).items()):
                     lines.append(f"{name}{_render_labels(labels)} {value:g}")
 
-            # Distinct loop variable: reusing `series` would alias two different
-            # value types and defeat static checking.
-            for name, histogram_series in sorted(self._histograms.items()):
+            histogram_names = sorted(
+                self._declared_histograms | self._histograms.keys()
+            )
+            for name in histogram_names:
                 if help_text := self._histogram_help.get(name):
                     lines.append(f"# HELP {name} {help_text}")
                 lines.append(f"# TYPE {name} histogram")
-                for labels, counts in sorted(histogram_series.items()):
+                for labels, counts in sorted(self._histograms.get(name, {}).items()):
                     cumulative = 0
                     for bound, count in zip(LATENCY_BUCKETS, counts, strict=False):
                         cumulative += count
@@ -142,7 +170,10 @@ class MetricsRegistry:
         return "\n".join(lines) + "\n"
 
     def reset(self) -> None:
-        """Clear all series. Test-only."""
+        """Clear all observations. Test-only.
+
+        Declarations survive: they are part of the metric contract, not data.
+        """
         with self._lock:
             self._counters.clear()
             self._histograms.clear()
@@ -152,40 +183,65 @@ class MetricsRegistry:
 # Process-wide registry.
 registry = MetricsRegistry()
 
+# Every metric this service exposes, declared at import so the exposition is a
+# stable contract rather than a function of what happened to have been
+# exercised. Scrapers and dashboards can then rely on the names existing.
+registry.declare_counter(
+    "callsense_http_requests_total",
+    "Total HTTP requests by method, route template and status.",
+)
+registry.declare_histogram(
+    "callsense_http_request_duration_seconds",
+    "HTTP request latency in seconds.",
+)
+registry.declare_counter(
+    "callsense_analyses_total",
+    "Completed call analyses by lead band and outcome.",
+)
+registry.declare_histogram(
+    "callsense_analysis_duration_seconds",
+    "Analysis engine duration in seconds.",
+)
+registry.declare_counter(
+    "callsense_ingestion_failures_total",
+    "Transcript ingestions that failed, by error code.",
+)
+registry.declare_counter(
+    "callsense_conversation_dynamics_total",
+    "Analyses by whether the transcript carried usable segment timings.",
+)
+
 
 def record_request(method: str, route: str, status: int, duration_s: float) -> None:
     labels = {"method": method, "route": route, "status": str(status)}
-    registry.increment(
-        "callsense_http_requests_total",
-        labels,
-        help_text="Total HTTP requests by method, route template and status.",
-    )
+    registry.increment("callsense_http_requests_total", labels)
     registry.observe(
         "callsense_http_request_duration_seconds",
         duration_s,
         {"method": method, "route": route},
-        help_text="HTTP request latency in seconds.",
     )
 
 
 def record_analysis(band: str, outcome: str, duration_s: float) -> None:
     """Business-level metrics. Band/outcome are bounded enums, so cardinality
     stays small and these are safe to label on."""
-    registry.increment(
-        "callsense_analyses_total",
-        {"band": band, "outcome": outcome},
-        help_text="Completed call analyses by lead band and outcome.",
-    )
-    registry.observe(
-        "callsense_analysis_duration_seconds",
-        duration_s,
-        help_text="Analysis engine duration in seconds.",
-    )
+    registry.increment("callsense_analyses_total", {"band": band, "outcome": outcome})
+    registry.observe("callsense_analysis_duration_seconds", duration_s)
 
 
 def record_ingestion_failure(reason: str) -> None:
+    registry.increment("callsense_ingestion_failures_total", {"reason": reason})
+
+
+def record_dynamics(available: bool) -> None:
+    """Whether a transcript carried the timings conversation dynamics need.
+
+    Worth a metric because it is a property of the customer's transcript
+    pipeline, not of this service: a team seeing `available="false"` on every
+    call should fix their export, and nothing else in the system would tell
+    them that.
+    """
     registry.increment(
-        "callsense_ingestion_failures_total",
-        {"reason": reason},
-        help_text="Transcript ingestions that failed, by error code.",
+        "callsense_conversation_dynamics_total",
+        {"available": "true" if available else "false"},
     )

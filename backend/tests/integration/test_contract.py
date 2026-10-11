@@ -31,8 +31,8 @@ UI_CONTRACT: dict[str, list[str]] = {
     ],
     "analysis": [
         "call_id", "summary", "sentiment", "signals", "objections",
-        "lead_score", "outcome", "next_actions", "talk_metrics", "topics",
-        "metadata",
+        "lead_score", "outcome", "next_actions", "talk_metrics", "dynamics",
+        "topics", "metadata",
     ],
     "lead_score": [
         "score", "band", "confidence", "components", "penalties", "rationale",
@@ -49,6 +49,15 @@ UI_CONTRACT: dict[str, list[str]] = {
     "talk_metrics": [
         "rep_talk_ratio", "prospect_talk_ratio", "question_count_rep",
         "question_count_prospect", "turn_count",
+    ],
+    "dynamics": [
+        "available", "unavailable_reason", "call_span_s", "rep_talk_seconds",
+        "prospect_talk_seconds", "rep_talk_time_ratio",
+        "longest_rep_monologue_s", "turn_count", "interruptions_by_rep",
+        "interruptions_by_prospect", "overtalk_seconds",
+        "rep_speech_rate_wpm", "prospect_speech_rate_wpm",
+        "rep_response_latency_s", "prospect_response_latency_s",
+        "dead_air_ratio", "prospect_share_by_third", "observations",
     ],
     "metadata": [
         "engine_version", "schema_version", "analyzers", "processing_ms",
@@ -132,6 +141,37 @@ class TestUiContract:
         assert not set(UI_CONTRACT["talk_metrics"]) - set(
             payload["analysis"]["talk_metrics"]
         )
+
+    def test_dynamics_fields_present(self, payload):
+        missing = set(UI_CONTRACT["dynamics"]) - set(payload["analysis"]["dynamics"])
+        assert not missing, f"dynamics is missing: {missing}"
+
+    def test_dynamics_is_present_even_for_an_untimed_transcript(self, payload):
+        """The block must always exist so the UI can branch on `available`
+        rather than on the key being absent."""
+        dynamics = payload["analysis"]["dynamics"]
+        assert dynamics["available"] is False
+        assert dynamics["unavailable_reason"]
+        assert dynamics["rep_talk_time_ratio"] is None
+
+    def test_dynamics_is_populated_for_a_timed_transcript(self, client):
+        timed = (
+            "WEBVTT\n\n"
+            "1\n00:00:00.000 --> 00:00:10.000\nRep: How do you handle "
+            "pipelines today, out of interest?\n\n"
+            "2\n00:00:11.000 --> 00:00:25.000\nProspect: Badly. We have "
+            "budget approved and need this live by March.\n\n"
+            "3\n00:00:26.000 --> 00:00:30.000\nRep: Shall we book Tuesday?\n\n"
+            "4\n00:00:31.000 --> 00:00:34.000\nProspect: Tuesday works fine.\n"
+        )
+        dynamics = client.post(
+            f"{API}/calls", json={"title": "timed", "transcript": timed}
+        ).json()["analysis"]["dynamics"]
+
+        assert dynamics["available"] is True
+        assert dynamics["rep_talk_time_ratio"] is not None
+        assert dynamics["call_span_s"] == pytest.approx(34.0)
+        assert len(dynamics["prospect_share_by_third"]) == 3
 
     def test_metadata_fields_present(self, payload):
         assert not set(UI_CONTRACT["metadata"]) - set(payload["analysis"]["metadata"])
