@@ -148,7 +148,20 @@ jobs:
 
       - run: npm ci
 
-      - name: Dependency audit
+      # Blocking gate: the tree that actually ships. A vulnerability here
+      # reaches the browser bundle or the Next server, so it fails the build.
+      - name: Dependency audit (production)
+        run: npm audit --omit=dev --audit-level=high
+
+      # Informational: the dev tree too. Not blocking, because some advisories
+      # have no fixed version at all -- GHSA-vfj7-8cjw-p6xm covers *every*
+      # release of `braces`, which reaches us only through
+      # @next/eslint-plugin-next -> fast-glob -> micromatch. Blocking on an
+      # unfixable advisory in a lint dependency trains people to ignore the
+      # audit, which costs more than it protects. Still printed so a dev-tree
+      # advisory that *is* fixable gets noticed.
+      - name: Dependency audit (including dev)
+        continue-on-error: true
         run: npm audit --audit-level=high
 
       - name: Type check
