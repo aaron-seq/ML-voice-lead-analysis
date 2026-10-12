@@ -21,6 +21,7 @@ against real labelled outcomes once a team has them.
 from __future__ import annotations
 
 from app.domain.models import (
+    ConversationDynamics,
     LeadBand,
     LeadScore,
     Objection,
@@ -96,9 +97,16 @@ def score_lead(
     sentiment: SentimentAnalysis,
     talk: TalkMetrics,
     outcome_is_rejection: bool = False,
+    dynamics: ConversationDynamics | None = None,
 ) -> LeadScore:
-    """Compute the lead score with a full audit trail."""
+    """Compute the lead score with a full audit trail.
+
+    ``dynamics`` is optional so a caller with only a transcript still gets a
+    score; when it is present and timed, talk balance is measured in seconds
+    rather than words.
+    """
     by_type = {s.type: s for s in signals}
+    dynamics = dynamics or ConversationDynamics()
 
     components: list[ScoreComponent] = []
     for name, signal_types in _COMPONENT_SIGNALS.items():
@@ -108,10 +116,10 @@ def score_lead(
             _component(name, raw, _signal_detail(name, signal_types, by_type))
         )
 
-    components.append(_component("engagement", *_engagement(talk, transcript)))
+    components.append(_component("engagement", *_engagement(talk, dynamics)))
     components.append(_component("sentiment", *_sentiment_component(sentiment)))
 
-    risks = _detect_risks(by_type, objections, sentiment, talk)
+    risks = _detect_risks(by_type, objections, sentiment, talk, dynamics)
     penalties = [
         ScoreComponent(
             name=risk.value,
@@ -166,14 +174,28 @@ def _signal_detail(
     return best.label
 
 
-def _engagement(talk: TalkMetrics, transcript: Transcript) -> tuple[float, str]:
+def _engagement(
+    talk: TalkMetrics, dynamics: ConversationDynamics
+) -> tuple[float, str]:
     """Engagement from how much, and how inquisitively, the prospect spoke.
 
     A prospect who talks a third to two-thirds of the time and asks questions
     is engaged. Both extremes are bad: silence means no buy-in, and a prospect
     who never lets the rep speak is usually venting, not buying.
+
+    Measured in seconds when the transcript is timed, words otherwise. The
+    distinction is not pedantry: word share and time share diverge whenever the
+    two speakers talk at different rates, and published samples separate won
+    from lost calls by around five points of *time* share -- a margin a biased
+    proxy can easily swallow.
     """
-    ratio = talk.prospect_talk_ratio
+    if dynamics.available and dynamics.rep_talk_time_ratio is not None:
+        ratio = 1.0 - dynamics.rep_talk_time_ratio
+        basis = "talk time"
+    else:
+        ratio = talk.prospect_talk_ratio
+        basis = "words"
+
     if ratio <= 0.0:
         # Undiarised transcript -- no basis to judge, so score neutrally
         # rather than penalising a call for its file format.
@@ -184,7 +206,7 @@ def _engagement(talk: TalkMetrics, transcript: Transcript) -> tuple[float, str]:
     inquisitiveness = min(1.0, talk.question_count_prospect / 5.0)
     raw = 0.65 * balance + 0.35 * inquisitiveness
     return raw, (
-        f"Prospect spoke {ratio:.0%} of words and asked "
+        f"Prospect spoke {ratio:.0%} of {basis} and asked "
         f"{talk.question_count_prospect} question(s)"
     )
 
@@ -202,11 +224,37 @@ def _sentiment_component(sentiment: SentimentAnalysis) -> tuple[float, str]:
     return max(0.0, min(1.0, raw)), detail
 
 
+# Seconds. 2.5 minutes is the stretch coaching guidance commonly names as the
+# point at which a rep should stop and leave room for a reply. It is a
+# guideline, not a validated predictor, and cold calls may well run the other
+# way: the published cold-call research finds that *successful* cold calls
+# contain longer rep bursts, not shorter. Flagged rather than heavily
+# penalised, and called out in docs/SCORING.md as the next thing to calibrate.
+_MONOLOGUE_SECONDS = 150.0
+
+# Words. The fallback for untimed transcripts, at roughly 150 wpm the same
+# 2.5 minutes. Kept so behaviour is unchanged for plain-text input.
+_MONOLOGUE_WORDS = 400
+
+
+def _is_monologue(talk: TalkMetrics, dynamics: ConversationDynamics) -> bool:
+    """Whether the rep ran on long enough to flag it.
+
+    Prefers seconds, because a 400-word stretch is 2 minutes from a fast
+    talker and over 3 from a slow one, and it is the duration that costs the
+    prospect their turn.
+    """
+    if dynamics.available and dynamics.longest_rep_monologue_s is not None:
+        return dynamics.longest_rep_monologue_s > _MONOLOGUE_SECONDS
+    return talk.longest_rep_monologue_words > _MONOLOGUE_WORDS
+
+
 def _detect_risks(
     by_type: dict[SignalType, Signal],
     objections: list[Objection],
     sentiment: SentimentAnalysis,
     talk: TalkMetrics,
+    dynamics: ConversationDynamics,
 ) -> list[RiskFlag]:
     risks: list[RiskFlag] = []
 
@@ -232,7 +280,7 @@ def _detect_risks(
     if talk.prospect_talk_ratio > 0.0:
         if talk.prospect_talk_ratio < 0.15:
             risks.append(RiskFlag.LOW_ENGAGEMENT)
-        if talk.longest_rep_monologue_words > 400:
+        if _is_monologue(talk, dynamics):
             risks.append(RiskFlag.REP_MONOLOGUE)
 
     if sentiment.trend < -0.25:

@@ -1,8 +1,21 @@
-# Optional: enables the transformer sentiment analyzer.
+# Optional: trained-model extras.
 #
-# Install only if you want ENABLE_TRANSFORMER_SENTIMENT=true. The lexicon
-# analyzer is the default and needs none of this. See docs/ARCHITECTURE.md
-# for the trade-off (determinism and speed vs. nuance).
+# Install only if you want ENABLE_TRAINED_SENTIMENT=true or intend to run
+# `python -m app.cli.main train`. The default engine path needs none of this
+# (docs/adr/0002-pure-python-analysis-engine.md).
+#
+# Measured trade-off before you install: the trained model beats the lexicon by
+# 24.6 points on SST-2's test set and loses by 1.8 points on sales language.
+# See docs/ML.md — it is off by default for that reason.
 
-torch==2.5.1
-transformers==4.47.1
+-r requirements.txt
+
+# ~200 MB with numpy/scipy. Two orders of magnitude smaller than the torch
+# stack, and enough for a linear model over TF-IDF n-grams.
+scikit-learn==1.9.0
+joblib==1.5.2
+
+# Transformer sentiment is a separate, heavier opt-in (~2.5 GB + model
+# download). Uncomment only if you have measured that it helps your data.
+# torch==2.5.1
+# transformers==4.47.1

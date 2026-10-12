@@ -133,6 +133,33 @@ export interface TalkMetrics {
   segments_analysed: number;
 }
 
+/**
+ * Timing-derived conversation dynamics. Every numeric field is null unless
+ * `available` is true, so render against `available` rather than truthiness —
+ * a genuine 0 interruptions is meaningful and must not read as "no data".
+ */
+export interface ConversationDynamics {
+  available: boolean;
+  unavailable_reason: string | null;
+  call_span_s: number | null;
+  rep_talk_seconds: number | null;
+  prospect_talk_seconds: number | null;
+  rep_talk_time_ratio: number | null;
+  longest_rep_monologue_s: number | null;
+  longest_prospect_turn_s: number | null;
+  turn_count: number;
+  interruptions_by_rep: number;
+  interruptions_by_prospect: number;
+  overtalk_seconds: number;
+  rep_speech_rate_wpm: number | null;
+  prospect_speech_rate_wpm: number | null;
+  rep_response_latency_s: number | null;
+  prospect_response_latency_s: number | null;
+  dead_air_ratio: number | null;
+  prospect_share_by_third: number[] | null;
+  observations: string[];
+}
+
 export interface AnalysisMetadata {
   engine_version: string;
   schema_version: number;
@@ -155,6 +182,7 @@ export interface CallAnalysis {
   outcome: CallOutcome;
   next_actions: NextAction[];
   talk_metrics: TalkMetrics;
+  dynamics: ConversationDynamics;
   topics: string[];
   metadata: AnalysisMetadata;
 }

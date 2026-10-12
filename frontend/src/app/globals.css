@@ -16,7 +16,10 @@
 
   --text-primary: #0b0b0b;
   --text-secondary: #52514e;
-  --text-muted: #898781;
+  /* 5.02:1 on surface-1, 4.60:1 on surface-3 (selected rows). The palette's
+     #898781 "muted" step is chart-chrome ink at 3.50:1 and fails WCAG AA for
+     UI text -- caught by scripts/a11y-audit.mjs. */
+  --text-muted: #6f6d6a;
 
   --border: rgba(11, 11, 11, 0.1);
   --gridline: #e1e0d9;
@@ -24,12 +27,20 @@
 
   --accent: #2a78d6;
   --accent-strong: #1c5cab;
+  /* Link ink is its own role: 5.39:1 on the light page plane, where the
+     #2a78d6 mark colour manages only 4.19:1. */
+  --link: #1c5cab;
 
   /* Status roles — fixed, never reused as series colours. */
   --status-good: #0ca30c;
   --status-warning: #fab219;
   --status-serious: #ec835a;
   --status-critical: #d03b3b;
+  /* Status colours are fixed for *marks*. Text needs a compliant step:
+     #d03b3b is 3.62:1 on the dark surface. */
+  --status-critical-text: #c0392f;
+  --chip-active-bg: #1c5cab;
+  --chip-active-fg: #ffffff;
 
   /* Lead bands: one hue stepped by rank (validated ordinal ramp). */
   --band-hot: #1c5cab;
@@ -54,7 +65,11 @@
 
     --text-primary: #ffffff;
     --text-secondary: #c3c2b7;
-    --text-muted: #898781;
+    /* 6.91:1 on surface-1, 6.17:1 on surface-3. */
+    --text-muted: #a5a39d;
+    --status-critical-text: #e66767;
+    --chip-active-bg: #86b6ef;
+    --chip-active-fg: #0b0b0b;
 
     --border: rgba(255, 255, 255, 0.1);
     --gridline: #2c2c2a;
@@ -62,6 +77,7 @@
 
     --accent: #3987e5;
     --accent-strong: #86b6ef;
+    --link: #86b6ef;
 
     --band-hot: #cde2fb;
     --band-warm: #9ec5f4;
@@ -80,6 +96,13 @@ html,
 body {
   margin: 0;
   padding: 0;
+}
+
+/* Also on <html>: contrast tooling (and any element whose ancestors are all
+   transparent) resolves the backdrop by walking up to the root. Without this
+   it falls back to white and mis-reports dark-mode contrast. */
+html {
+  background: var(--surface-2);
 }
 
 body {
@@ -104,7 +127,7 @@ button {
 }
 
 a {
-  color: var(--accent);
+  color: var(--link);
 }
 
 code {
@@ -306,9 +329,9 @@ code {
 }
 
 .chip-active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+  background: var(--chip-active-bg);
+  border-color: var(--chip-active-bg);
+  color: var(--chip-active-fg);
   font-weight: 600;
 }
 
@@ -439,12 +462,12 @@ button:disabled {
 }
 
 .status-failed {
-  color: var(--status-critical);
+  color: var(--status-critical-text);
   font-weight: 600;
 }
 
 .status-critical {
-  color: var(--status-critical);
+  color: var(--status-critical-text);
 }
 
 .status-icon {
@@ -574,7 +597,7 @@ button:disabled {
 }
 
 .prio-tag.prio-p0 {
-  color: var(--status-critical);
+  color: var(--status-critical-text);
 }
 
 .action-title {
@@ -630,7 +653,7 @@ button:disabled {
 
 .score-row.penalty th,
 .score-row.penalty td {
-  color: var(--status-critical);
+  color: var(--status-critical-text);
 }
 
 .penalty-icon {
@@ -644,7 +667,7 @@ button:disabled {
   border: none;
   padding: 0;
   font-size: 11px;
-  color: var(--accent);
+  color: var(--link);
 }
 
 .bar-track {
@@ -716,7 +739,7 @@ button:disabled {
 }
 
 .role-prospect {
-  color: var(--accent);
+  color: var(--link);
 }
 
 .quote-text {
@@ -865,6 +888,57 @@ button:disabled {
   margin-bottom: 6px;
 }
 
+/* Prospect's share of talk time per third of the call. Three bars rather than
+   a line: there are only three values, and a line between three points
+   implies a continuity the measurement does not have. */
+.trajectory {
+  display: flex;
+  gap: 20px;
+  align-items: flex-end;
+  padding: 4px 0 0;
+  /* Constrained so three bars read as one chart rather than three widely
+     separated stats. */
+  max-width: 340px;
+}
+
+.trajectory-step {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.trajectory-track {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  max-width: 72px;
+  height: 64px;
+  background: var(--surface-3);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.trajectory-fill {
+  width: 100%;
+  min-height: 2px;
+  background: var(--accent);
+  border-radius: 3px 3px 0 0;
+}
+
+.trajectory-value {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.trajectory-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 .sentiment-svg {
   width: 100%;
   height: auto;
@@ -946,7 +1020,7 @@ button:disabled {
 }
 
 .turn.role-prospect .turn-speaker {
-  color: var(--accent);
+  color: var(--link);
 }
 
 .turn-text {
@@ -957,7 +1031,7 @@ button:disabled {
   background: none;
   border: none;
   padding: 0;
-  color: var(--accent);
+  color: var(--link);
   font: inherit;
   font-weight: 650;
 }

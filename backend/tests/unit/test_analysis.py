@@ -299,6 +299,55 @@ class TestOutcome:
         assert analysis.outcome.label is CallOutcomeLabel.NO_CLEAR_OUTCOME
 
 
+class TestRejectionTargeting:
+    """A rejection phrase aimed at a date is not a rejection of the offering.
+
+    Found by a real transcript: "the other vendor wanted six weeks for a POC,
+    which doesn't fit February at all" was classified NOT_A_FIT. Because a
+    rejection hard-overrides the band, a call with approved budget, a named
+    deadline and a booked next step came out DISQUALIFIED -- from a sentence
+    complaining that a *competitor* was too slow.
+    """
+
+    def test_a_schedule_complaint_is_not_a_rejection(self, engine):
+        analysis = analyse(engine, (
+            "Rep: What would you need to see to move forward?\n"
+            "Prospect: A proof of concept. The other vendor wanted six weeks, "
+            "which doesn't fit February at all.\n"
+            "Rep: We can do it in a week. Shall we start Tuesday?\n"
+            "Prospect: Tuesday works, send the invite.\n"
+        ))
+        assert analysis.outcome.label is not CallOutcomeLabel.NOT_A_FIT
+        assert analysis.lead_score.band is not LeadBand.DISQUALIFIED
+
+    @pytest.mark.parametrize("object_phrase", [
+        "February", "our timeline", "the deadline", "that quarter", "Q1",
+    ])
+    def test_schedule_objects_are_recognised(self, engine, object_phrase):
+        analysis = analyse(engine, (
+            "Rep: How does the timing look on your side?\n"
+            f"Prospect: Their plan doesn't fit {object_phrase}, so we need "
+            "something quicker.\n"
+        ))
+        assert analysis.outcome.label is not CallOutcomeLabel.NOT_A_FIT
+
+    def test_a_genuine_fit_rejection_still_fires(self):
+        """The guard must not swallow the case it was carved out of."""
+        engine = AnalysisEngine()
+        for text in (
+            "Prospect: Honestly this is not a fit for us at all.",
+            "Prospect: It doesn't fit what we need, sorry.",
+            "Prospect: You're too small for us, we need an enterprise vendor.",
+        ):
+            analysis = analyse(engine, f"Rep: Thanks for the time.\n{text}\n")
+            assert analysis.outcome.label is CallOutcomeLabel.NOT_A_FIT, text
+
+    def test_the_shipped_rejection_example_is_still_disqualified(self, engine):
+        """Guard against over-correcting into a system that never rejects."""
+        analysis = analyse(engine, REJECTION_CALL)
+        assert analysis.lead_score.band is LeadBand.DISQUALIFIED
+
+
 class TestNextActions:
     def test_rejection_produces_a_closing_action_only(self, engine):
         actions = analyse(engine, REJECTION_CALL).next_actions
@@ -387,3 +436,83 @@ class TestLexiconHygiene:
 
     def test_every_objection_category_has_a_playbook(self):
         assert set(lexicons.OBJECTION_PHRASES) <= set(lexicons.OBJECTION_PLAYBOOK)
+
+
+class TestScoringUsesTimingsWhenAvailable:
+    """Talk balance drives two scored terms. When the transcript is timed,
+    both must measure seconds rather than word share.
+
+    Word share is a biased proxy: two speakers at different speech rates
+    produce different word counts for the same airtime. Published samples
+    separate won from lost calls by roughly five points of *time* share, a
+    margin the proxy can easily swallow.
+    """
+
+    TIMED_PROSPECT_HEAVY = (
+        "WEBVTT\n\n"
+        "1\n00:00:00.000 --> 00:00:20.000\nRep: So. Tell me. Everything.\n\n"
+        "2\n00:00:20.000 --> 00:00:25.000\nProspect: We have eighty pipelines "
+        "and two engineers babysitting them every week, which is exactly why "
+        "we have budget approved to fix it now.\n"
+    )
+
+    def test_engagement_detail_names_its_basis(self, engine):
+        """A reader must be able to tell which quantity produced the number."""
+        timed = analyse(engine, self.TIMED_PROSPECT_HEAVY)
+        engagement = next(
+            c for c in timed.lead_score.components if c.name == "engagement"
+        )
+        assert "talk time" in engagement.detail
+
+        untimed = analyse(engine, QUALIFIED_CALL)
+        engagement = next(
+            c for c in untimed.lead_score.components if c.name == "engagement"
+        )
+        assert "words" in engagement.detail
+
+    def test_the_two_bases_disagree_on_this_transcript(self, engine):
+        """If they always agreed the change would be pointless. Here the rep
+        holds 80% of the airtime while speaking a fifth of the words."""
+        analysis = analyse(engine, self.TIMED_PROSPECT_HEAVY)
+        assert analysis.dynamics.rep_talk_time_ratio is not None
+        assert analysis.dynamics.rep_talk_time_ratio > 0.75
+        assert analysis.talk_metrics.rep_talk_ratio < 0.25
+
+    def test_monologue_risk_uses_seconds_when_timed(self, engine):
+        """160 words is under the 400-word fallback, but spoken over four
+        minutes it is exactly the monologue the flag exists to catch."""
+        slow = (
+            "WEBVTT\n\n"
+            "1\n00:00:00.000 --> 00:04:00.000\nRep: "
+            + " ".join(["so"] * 160)
+            + "\n\n2\n00:04:00.000 --> 00:04:20.000\nProspect: Right, I see, "
+            "that is interesting, tell me about the pricing please.\n"
+        )
+        analysis = analyse(engine, slow)
+        assert analysis.talk_metrics.longest_rep_monologue_words < 400
+        assert RiskFlag.REP_MONOLOGUE in analysis.lead_score.risks
+
+    def test_untimed_scores_are_unchanged_by_the_new_code_path(self, engine):
+        """Plain text is most of what this product sees; it must be unaffected."""
+        analysis = analyse(engine, QUALIFIED_CALL)
+        assert analysis.dynamics.available is False
+        assert analysis.lead_score.band is LeadBand.HOT
+
+
+class TestDynamicsReachTheAnalysis:
+    def test_analysis_carries_a_dynamics_block(self, engine):
+        analysis = analyse(engine, QUALIFIED_CALL)
+        assert analysis.dynamics is not None
+        assert analysis.dynamics.available is False
+
+    def test_the_dynamics_analyzer_is_named_in_metadata(self, engine):
+        """Every analyzer that contributed must be identifiable after the fact."""
+        analysis = analyse(engine, QUALIFIED_CALL)
+        assert analysis.metadata.analyzers["dynamics"] == "timings-v1"
+
+    def test_engine_version_moved_with_the_scoring_change(self):
+        """Scores for timed transcripts changed, so stored results must be
+        distinguishable from ones produced by the previous engine."""
+        from app.domain.models import ENGINE_VERSION
+
+        assert ENGINE_VERSION != "1.0.0"

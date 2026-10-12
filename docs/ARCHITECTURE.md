@@ -13,6 +13,7 @@ backend/app/
 │   ├── sentiment.py       Lexicon analyzer (+ optional transformer)
 │   ├── signals.py         Buying signals and objections, with evidence
 │   ├── outcome.py         Outcome, summary, next actions, talk metrics
+│   ├── dynamics.py        Conversation dynamics from segment timings
 │   ├── scoring.py         The weighted rubric
 │   ├── engine.py          Orchestration — the one public entry point
 │   └── evaluation.py      Rubric validation against labelled outcomes
@@ -42,6 +43,104 @@ backend/app/
                     │ REST API  ·  CSV export  ·  Dashboard│
                     └──────────────────────────────────────┘
 ```
+
+## Ingestion sequence
+
+What happens on `POST /api/v1/calls/upload`. The ordering is deliberate: the raw
+transcript is durable *before* analysis runs, so a parse failure leaves the
+upload recoverable rather than discarded.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant M as Middleware
+    participant R as Router
+    participant I as IngestionService
+    participant B as Blob store
+    participant E as Engine (pure)
+    participant D as Database
+
+    C->>M: POST /calls/upload (multipart)
+    M->>M: assign request id, start timer
+    M->>R: dispatch
+    R->>R: read body with size cap
+    R->>I: ingest(content, title, principal)
+    I->>B: put transcripts/{id}
+    I->>D: INSERT call (status=pending)
+    I->>E: analyse_text(raw)
+    alt transcript parses
+        E-->>I: Transcript + CallAnalysis
+        I->>D: attach_analysis (+ denormalised facts)
+        I->>B: put parsed/{id}
+        I->>D: INSERT audit(call.ingest)
+        I-->>R: Call
+        R-->>C: 201 + full analysis
+    else transcript is unusable
+        E-->>I: EmptyTranscriptError
+        I->>D: status=failed, error=... (committed)
+        Note over I,D: Committed explicitly — re-raising would<br/>roll back the record explaining the failure
+        I-->>R: raise
+        R-->>C: 400 {code, message, request_id}
+    end
+    M->>M: record metrics, log outcome
+```
+
+## Deployment topology
+
+```mermaid
+flowchart TB
+    subgraph client["Browser"]
+        UI[Dashboard<br/>static Next.js]
+    end
+    subgraph edge["Ingress"]
+        P[Reverse proxy<br/>TLS termination]
+    end
+    subgraph app["Application"]
+        A1[API worker 1]
+        A2[API worker N]
+    end
+    subgraph state["State"]
+        DB[(PostgreSQL<br/>or SQLite)]
+        BL[(Blob storage<br/>S3 or filesystem)]
+    end
+    subgraph ops["Operations"]
+        PROM[Prometheus<br/>scrapes /metrics]
+        LOG[Log aggregator<br/>JSON lines]
+    end
+
+    UI -->|"XHR + X-API-Key"| P
+    P --> A1 & A2
+    A1 & A2 --> DB
+    A1 & A2 --> BL
+    PROM -.-> A1 & A2
+    A1 & A2 -.-> LOG
+```
+
+Note that metrics and rate limits are **per worker** — each worker keeps its own
+counters, so Prometheus should treat them as separate targets. See
+[OPERATIONS.md](OPERATIONS.md).
+
+## Data flow: where a transcript ends up
+
+```mermaid
+flowchart LR
+    T[Raw transcript] --> BR[(blob: transcripts/id)]
+    T --> PARSE[parse + infer roles]
+    PARSE --> PT[(blob: parsed/id)]
+    PARSE --> AN[analyse]
+    AN --> AJ[(db: calls.analysis_json)]
+    AN --> DEN[(db: indexed facts<br/>band · score · outcome<br/>sentiment · created_at · owner)]
+    DEN --> LIST[list / filter / sort]
+    DEN --> AGG[SQL aggregates]
+    AJ --> DETAIL[call detail view]
+    AJ --> FREQ[objection / signal frequencies]
+    PT --> TURNS[role-attributed transcript view]
+```
+
+The split matters: **indexed facts** answer list and analytics queries without
+touching JSON, while the **full analysis** is fetched only for a single call.
+That is why `GET /calls` does not hydrate analyses by default.
 
 ## Design decisions
 
@@ -130,6 +229,21 @@ The phrase matcher tolerates one skipped function word, because people do not
 speak in lexicon entries — "send it over" and "send over" are the same
 commitment.
 
+### Metrics are per-worker, and say so
+
+`app/core/metrics.py` implements Prometheus counters and histograms with no
+dependency (~80 lines for the three metric types actually needed). Request
+metrics are labelled on the matched **route template**, never the request path —
+a path label would mint a new time series per call id.
+
+Values are per worker process, exactly like the rate limiter. That is correct
+for Prometheus scraping each worker as its own target and misleading if you
+expect a global total from one load-balanced scrape, so it is documented rather
+than glossed over.
+
+`METRICS_ENABLED=false` returns 404. A test asserts that, because the setting
+previously existed and did nothing.
+
 ### Confidence is separate from score
 
 A 20-word voicemail can score highly from one lucky phrase. Folding that into
@@ -163,7 +277,13 @@ dashboard shows a warning banner below 0.45.
 | `tests/unit/test_security_and_storage.py` | Auth, roles, rate limiting, config invariants, path-traversal defence |
 | `tests/integration/test_api.py` | Real HTTP against a real database and real storage |
 | `tests/integration/test_contract.py` | Engine ↔ storage ↔ API ↔ frontend field contract |
+| `tests/unit/test_metrics.py` | Exposition format, label cardinality, the disable switch |
+| `tests/test_benchmarks.py` | Latency ceilings, scaling ratio, matcher index behaviour |
 
 Nothing is mocked. CI additionally runs the integration suite against
-PostgreSQL, and boots the API to exercise the documented quick-start on a clean
-checkout.
+PostgreSQL, audits both dependency trees (`pip-audit`, `npm audit`, `bandit`),
+and boots the API to exercise the documented quick-start on a clean checkout.
+
+The benchmarks assert a *scaling ratio* rather than only absolute times, so they
+catch an accidentally quadratic analyzer without failing because a shared CI
+runner was busy.

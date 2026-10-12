@@ -14,7 +14,20 @@ from app.core.security import ANONYMOUS_ADMIN, ApiKeyRegistry, Principal, Role
 from app.db.repository import AuditRepository, CallRepository
 from app.db.session import get_session
 
-SettingsDep = Annotated[Settings, Depends(get_settings)]
+
+def get_app_settings(request: Request) -> Settings:
+    """Resolve the settings this app instance was built with.
+
+    Depending on ``get_settings`` directly would read the process-wide cached
+    object instead, so anything passed to ``create_app(settings)`` would be
+    silently ignored by every route that reads a setting -- which made
+    per-instance configuration (and the tests that rely on it) a no-op.
+    """
+    settings: Settings | None = getattr(request.app.state, "settings", None)
+    return settings if settings is not None else get_settings()
+
+
+SettingsDep = Annotated[Settings, Depends(get_app_settings)]
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 

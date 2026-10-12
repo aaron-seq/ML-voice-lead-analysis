@@ -109,27 +109,29 @@ class TestSettingsInvariants:
     def test_production_forces_auth_on(self):
         settings = Settings(
             environment=Environment.PRODUCTION,
-            secret_key="x" * 40,
             api_keys=[f"{VALID_KEY}:admin"],
         )
         assert settings.auth_enabled is True
-
-    def test_production_rejects_a_weak_secret(self):
-        with pytest.raises(ValueError, match="SECRET_KEY"):
-            Settings(
-                environment=Environment.PRODUCTION,
-                secret_key="short",
-                api_keys=[f"{VALID_KEY}:admin"],
-            )
 
     def test_production_rejects_wildcard_cors(self):
         with pytest.raises(ValueError, match="CORS"):
             Settings(
                 environment=Environment.PRODUCTION,
-                secret_key="x" * 40,
                 cors_origins=["*"],
                 api_keys=[f"{VALID_KEY}:admin"],
             )
+
+    def test_no_signing_secret_is_declared(self):
+        """A setting that nothing reads is fabricated functionality.
+
+        Auth compares SHA-256 digests; nothing is signed. If a SECRET_KEY is
+        reintroduced it must arrive with the code that uses it.
+        """
+        assert "secret_key" not in Settings.model_fields
+
+    def test_default_host_is_loopback(self):
+        """Binding 0.0.0.0 by default exposes a developer's laptop."""
+        assert Settings().host == "127.0.0.1"
 
     def test_auth_without_keys_is_refused(self):
         """Otherwise the API would lock everyone out silently."""
@@ -139,7 +141,6 @@ class TestSettingsInvariants:
     def test_docs_are_disabled_in_production(self):
         settings = Settings(
             environment=Environment.PRODUCTION,
-            secret_key="x" * 40,
             api_keys=[f"{VALID_KEY}:admin"],
         )
         assert settings.docs_url is None

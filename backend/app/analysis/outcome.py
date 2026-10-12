@@ -58,6 +58,40 @@ REJECTION_OUTCOMES = frozenset({
     CallOutcomeLabel.NOT_A_FIT,
 })
 
+# "Not a fit" and "doesn't fit" are transitive: they need an object, and when
+# the object is elided ("it doesn't fit", "we're not a fit") that object is the
+# offering, which is a rejection. When an explicit object follows naming a date
+# or a schedule, the speaker is rejecting a *timeline*, and that is frequently
+# the opposite of a rejection.
+#
+# Found by a real transcript: "The other vendor wanted six weeks for a POC,
+# which doesn't fit February at all" classified the call as NOT_A_FIT, and
+# because a rejection hard-overrides the band, a call with approved budget, a
+# named deadline and a booked next step came out DISQUALIFIED. The prospect was
+# saying a competitor was too slow.
+_SCHEDULE_OBJECTS: frozenset[str] = frozenset({
+    "january", "february", "march", "april", "may", "june", "july", "august",
+    "september", "october", "november", "december",
+    "q1", "q2", "q3", "q4",
+    "monday", "tuesday", "wednesday", "thursday", "friday",
+    "timeline", "timelines", "timescale", "timescales", "schedule", "schedules",
+    "deadline", "deadlines", "date", "dates", "window", "timeframe",
+    "quarter", "month", "week", "sprint",
+})
+
+# How far past the match to look for that object. Enough for "doesn't fit our
+# timeline" and "doesn't fit the February deadline", not enough to reach into
+# the next clause.
+_OBJECT_LOOKAHEAD = 3
+
+
+def _rejection_targets_a_schedule(tokens: list[str], end: int) -> bool:
+    """Whether a rejection phrase is aimed at a date rather than the offering."""
+    return any(
+        token in _SCHEDULE_OBJECTS
+        for token in tokens[end:end + _OBJECT_LOOKAHEAD]
+    )
+
 
 def classify_outcome(transcript: Transcript) -> CallOutcome:
     """Determine what the call actually resulted in."""
@@ -74,6 +108,16 @@ def classify_outcome(transcript: Transcript) -> CallOutcome:
         for match in _OUTCOME_MATCHER.find(tokens):
             label: str = match.key  # type: ignore[assignment]
             weight = match.weight
+
+            # A rejection aimed at a date is not a rejection of the offering,
+            # and a rejection outranks every positive outcome, so letting one
+            # through costs the whole call's classification.
+            if (
+                CallOutcomeLabel(label) in REJECTION_OUTCOMES
+                and _rejection_targets_a_schedule(tokens, match.end)
+            ):
+                continue
+
             if seg.index >= closing_start:
                 weight *= _CLOSING_BOOST
             # "Send me the deck" from the prospect is a real request; the rep

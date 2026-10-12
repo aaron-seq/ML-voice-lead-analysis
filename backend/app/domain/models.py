@@ -24,9 +24,16 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field
 # Bumped whenever a change to the engine alters scores for identical input.
 # Persisted with every analysis so results can be compared like-for-like and
 # stale rows can be selectively re-analysed.
-ENGINE_VERSION = "1.0.0"
+#
+# 1.1.0: engagement and the rep_monologue risk now measure talk balance in
+# seconds when the transcript carries timings, having previously used word
+# share as a proxy. Scores for timed transcripts move; scores for untimed ones
+# are unchanged.
+ENGINE_VERSION = "1.1.0"
 
-# Bumped whenever the shape of these models changes incompatibly.
+# Bumped whenever the shape of these models changes incompatibly. Adding
+# `CallAnalysis.dynamics` with a default is additive -- rows written under
+# version 1 still deserialise -- so this stays put.
 SCHEMA_VERSION = 1
 
 
@@ -346,7 +353,13 @@ class CallSummary(DomainModel):
 
 
 class TalkMetrics(DomainModel):
-    """Conversation dynamics. Correlates strongly with real call quality."""
+    """Who spoke, how much, and how inquisitively.
+
+    Ratios here are shares of *words*, which is all an untimed transcript
+    supports. When the source carries timings, ``ConversationDynamics`` reports
+    the same balance in seconds -- the quantity the industry actually means by
+    "talk-to-listen ratio" -- and the scoring rubric prefers it.
+    """
 
     rep_talk_ratio: float = Field(
         0.0, ge=0.0, le=1.0, description="Share of words spoken by the rep"
@@ -357,6 +370,66 @@ class TalkMetrics(DomainModel):
     question_count_prospect: int = Field(0, ge=0)
     turn_count: int = Field(0, ge=0)
     segments_analysed: int = Field(0, ge=0)
+
+
+class ConversationDynamics(DomainModel):
+    """Timing-derived conversation dynamics.
+
+    Every field is ``None`` when the transcript carried no usable timings;
+    ``available`` says which case you are in and ``unavailable_reason`` says
+    why. Nothing here is estimated from word counts -- a fabricated duration
+    would corrupt every per-minute figure that reads it.
+
+    None of these feed the lead score except the two with published outcome
+    associations (talk-time ratio, monologue length), which refine the
+    ``engagement`` component and the ``rep_monologue`` risk rather than adding
+    weight of their own. See ``app/analysis/dynamics.py`` for why.
+    """
+
+    available: bool = False
+    unavailable_reason: str | None = None
+
+    call_span_s: float | None = Field(None, ge=0)
+    rep_talk_seconds: float | None = Field(None, ge=0)
+    prospect_talk_seconds: float | None = Field(None, ge=0)
+    rep_talk_time_ratio: float | None = Field(
+        None, ge=0.0, le=1.0,
+        description="Rep's share of attributed speaking time, not of words",
+    )
+    longest_rep_monologue_s: float | None = Field(None, ge=0)
+    longest_prospect_turn_s: float | None = Field(None, ge=0)
+
+    turn_count: int = Field(0, ge=0, description="Speaker turns, not subtitle cues")
+    interruptions_by_rep: int = Field(
+        0, ge=0, description="Times the rep began speaking while the prospect was"
+    )
+    interruptions_by_prospect: int = Field(0, ge=0)
+    overtalk_seconds: float = Field(
+        0.0, ge=0, description="Total airtime with both parties speaking"
+    )
+
+    rep_speech_rate_wpm: float | None = Field(None, ge=0)
+    prospect_speech_rate_wpm: float | None = Field(None, ge=0)
+    rep_response_latency_s: float | None = Field(
+        None, ge=0,
+        description="Mean silence before the rep replies -- how much room they "
+        "leave for an answer",
+    )
+    prospect_response_latency_s: float | None = Field(
+        None, ge=0, description="Mean silence before the prospect replies"
+    )
+    dead_air_ratio: float | None = Field(
+        None, ge=0.0, le=1.0, description="Share of the call with nobody speaking"
+    )
+    prospect_share_by_third: list[float] | None = Field(
+        None,
+        description="Prospect's share of talk time in each third of the call, "
+        "for reading engagement trajectory rather than its average",
+    )
+    observations: list[str] = Field(
+        default_factory=list,
+        description="Plain-language notes, each naming the number behind it",
+    )
 
 
 class AnalysisMetadata(DomainModel):
@@ -386,6 +459,11 @@ class CallAnalysis(DomainModel):
     outcome: CallOutcome
     next_actions: list[NextAction] = Field(default_factory=list)
     talk_metrics: TalkMetrics
+    dynamics: ConversationDynamics = Field(
+        default_factory=ConversationDynamics,
+        description="Timing-derived dynamics; `available` is false for untimed "
+        "transcripts. Defaulted so analyses stored under schema 1 still load.",
+    )
     topics: list[str] = Field(default_factory=list)
     metadata: AnalysisMetadata
 

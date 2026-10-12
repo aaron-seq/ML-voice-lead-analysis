@@ -9,6 +9,7 @@ end to end.
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
@@ -22,6 +23,17 @@ from app.domain.models import Transcript
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
+# When set, the suite runs against this database instead of a per-test SQLite
+# file. The `Backend (PostgreSQL)` CI job sets it.
+#
+# This indirection existed in the workflow long before anything read it: the
+# job exported TEST_DATABASE_URL, the `settings` fixture hardcoded SQLite, and
+# the job's own comment claimed it "proves the same schema and queries work on
+# the database production actually uses". It proved nothing -- it ran SQLite
+# twice. A green job asserting something it never exercised is worse than no
+# job, which is the same defect as the config settings nothing read (ADR 0005).
+TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
+
 
 @pytest.fixture(scope="session")
 def event_loop() -> Iterator[asyncio.AbstractEventLoop]:
@@ -31,11 +43,44 @@ def event_loop() -> Iterator[asyncio.AbstractEventLoop]:
 
 
 @pytest.fixture
-def settings(tmp_path: Path) -> Settings:
+def database_url(tmp_path: Path) -> Iterator[str]:
+    """The database under test, isolated per test.
+
+    SQLite gets a fresh file per test, which `tmp_path` provides for free.
+    A shared server has no such thing, so every table is dropped and recreated
+    around each test instead -- slower, but the alternative is tests that pass
+    or fail depending on what ran before them.
+    """
+    if not TEST_DATABASE_URL:
+        yield f"sqlite+aiosqlite:///{tmp_path / 'test.db'}"
+        return
+
+    asyncio.run(_reset_external_schema(TEST_DATABASE_URL))
+    yield TEST_DATABASE_URL
+    asyncio.run(_reset_external_schema(TEST_DATABASE_URL))
+
+
+async def _reset_external_schema(url: str) -> None:
+    """Drop and recreate every table on a shared test database."""
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from app.db.models import Base
+
+    engine = create_async_engine(url)
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.drop_all)
+            await connection.run_sync(Base.metadata.create_all)
+    finally:
+        await engine.dispose()
+
+
+@pytest.fixture
+def settings(tmp_path: Path, database_url: str) -> Settings:
     """Isolated settings: a per-test database and blob root."""
     return Settings(
         environment=Environment.TEST,
-        database_url=f"sqlite+aiosqlite:///{tmp_path / 'test.db'}",
+        database_url=database_url,
         storage_local_path=tmp_path / "blobs",
         auth_enabled=False,
         log_level="CRITICAL",

@@ -1,0 +1,96 @@
+WEBVTT
+
+NOTE
+A diarised, timed discovery call. Every other example in this directory is
+untimed plain text, which means conversation dynamics (talk time in seconds,
+interruptions, response latency, speech rate) report as unavailable for all of
+them. This one exercises that path end to end.
+
+Timings are deliberately realistic rather than tidy: the rep talks over the
+prospect once at 02:08, the prospect leaves a long think-pause at 01:14, and
+the prospect's share of the conversation climbs as the call goes on.
+
+1
+00:00:00.000 --> 00:00:08.400
+<v Rep>Hi Priya, thanks for making the time. I know calendars are brutal this
+time of year, so I'll keep this useful or let you go early.
+
+2
+00:00:08.900 --> 00:00:12.100
+<v Prospect>No problem. I've got about twenty minutes.
+
+3
+00:00:12.600 --> 00:00:24.900
+<v Rep>Perfect. I'd rather not pitch at you, so can I start with how your team
+handles ingestion pipelines today? Just the honest version, not the architecture
+diagram version.
+
+4
+00:00:25.800 --> 00:00:47.200
+<v Prospect>Honestly it's held together with tape. We've got about eighty
+pipelines, all cron, and two engineers who spend most of their week babysitting
+them. Last month we had a silent failure that cost us three days of revenue
+reporting before anyone noticed.
+
+5
+00:00:48.000 --> 00:00:52.600
+<v Rep>Three days. What did that cost you to unpick?
+
+6
+00:00:53.400 --> 00:01:12.800
+<v Prospect>Two engineers for most of a week, plus the finance team redid their
+close. I'd put it somewhere north of forty thousand once you count the
+distraction. That's the part that got leadership's attention.
+
+7
+00:01:13.200 --> 00:01:16.100
+<v Rep>And is that attention attached to a budget?
+
+8
+00:01:28.400 --> 00:01:49.700
+<v Prospect>It is, actually. We've got allocation approved for data tooling
+this quarter — I think it's around sixty thousand. I sign off up to fifty
+myself, anything above that needs my VP, but she's the one who asked me to go
+looking.
+
+9
+00:01:50.300 --> 00:02:00.100
+<v Rep>That's helpful. What's the deadline driving it? You said this quarter.
+
+10
+00:02:00.800 --> 00:02:14.600
+<v Prospect>We're going live with a new product in March, and the current setup
+will not survive the volume. So we need something in place by end of February,
+realistically, which means deciding in the next few weeks.
+
+11
+00:02:08.900 --> 00:02:16.200
+<v Rep>Right, so February is the hard date.
+
+12
+00:02:17.000 --> 00:02:31.400
+<v Prospect>February is the hard date. I should say we're also looking at one
+other vendor, so this isn't a sole-source thing. But your integration story is
+the reason you're on the list at all.
+
+13
+00:02:32.200 --> 00:02:44.800
+<v Rep>I appreciate the straightness. What would you need to see from us to be
+comfortable recommending it to your VP?
+
+14
+00:02:45.600 --> 00:03:18.900
+<v Prospect>A working proof of concept against two of our ugliest pipelines,
+and some answer on SOC 2 because our security review will ask. If it handles
+those two without me writing glue code, that's most of the argument. The other
+vendor wanted six weeks for a POC, which doesn't fit February at all.
+
+15
+00:03:19.600 --> 00:03:30.200
+<v Rep>We can do a POC in a week on your real pipelines, and I'll send the SOC 2
+report over today. Shall we put Tuesday in the calendar to kick it off?
+
+16
+00:03:31.000 --> 00:03:40.600
+<v Prospect>Tuesday works. Send the invite to me and I'll add my lead
+engineer — he's the one who'll actually try to break it.

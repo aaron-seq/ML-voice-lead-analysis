@@ -13,9 +13,12 @@ from __future__ import annotations
 import time
 
 from fastapi import APIRouter, Response, status
+from fastapi.responses import PlainTextResponse
 
 from app.api.deps import BlobStoreDep, SettingsDep
 from app.api.schemas import HealthComponent, HealthResponse
+from app.core.errors import NotFoundError
+from app.core.metrics import registry
 from app.db.session import check_health as check_database
 
 router = APIRouter(tags=["System"])
@@ -75,6 +78,31 @@ async def health(
 ) -> HealthResponse:
     """Alias for the readiness probe, kept for convention."""
     return await readiness(settings, blobs, response)
+
+
+@router.get(
+    "/metrics",
+    summary="Prometheus metrics",
+    response_class=PlainTextResponse,
+    include_in_schema=False,
+)
+async def metrics(settings: SettingsDep) -> PlainTextResponse:
+    """Prometheus text exposition.
+
+    Unauthenticated by design, like the health probes: a scrape endpoint that
+    needs a credential is a scrape endpoint that does not get scraped. It
+    exposes only counters and latencies -- no transcript content, no customer
+    data, no configuration. Restrict it at the ingress if your Prometheus is
+    not on a trusted network.
+
+    404s when METRICS_ENABLED=false so the setting genuinely does something.
+    """
+    if not settings.metrics_enabled:
+        raise NotFoundError("Metrics are disabled (METRICS_ENABLED=false)")
+    return PlainTextResponse(
+        registry.render(),
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )
 
 
 @router.get("/", summary="Service metadata", include_in_schema=False)
