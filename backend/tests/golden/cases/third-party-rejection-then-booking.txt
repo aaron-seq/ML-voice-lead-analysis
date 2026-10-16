@@ -1,0 +1,8 @@
+Rep: Hi Dana, thanks for taking the call. How are you handling pipeline monitoring today?
+Prospect: Honestly it's a mess. We're struggling with it and it costs us about two days a week.
+Prospect: We looked at another tool last quarter. The other vendor said we're not a fit for them, which is why I'm talking to you.
+Rep: That's useful context. What would a fix be worth to the team?
+Prospect: We have budget allocated this quarter, and I can approve it myself.
+Prospect: It's a top priority because we go live in March.
+Rep: Shall we book a demo for Tuesday so you can see it on your own pipelines?
+Prospect: Tuesday works, send the invite.

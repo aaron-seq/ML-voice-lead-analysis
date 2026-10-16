@@ -109,6 +109,30 @@ product was broken end to end.
 - New field the frontend reads → add it to `UI_CONTRACT` in
   `tests/integration/test_contract.py`.
 
+### Changes that move scores
+
+`tests/golden/` pins the band, outcome and score of every transcript in
+`examples/transcripts/` plus targeted cases in `tests/golden/cases/`. The rest
+of the suite checks *properties*; this checks *values*, so a weight tweak that
+moves every call by eight points fails here instead of shipping unnoticed.
+
+When a change is **meant** to move scores:
+
+1. Bump `ENGINE_VERSION` in `backend/app/domain/models.py`, with a comment
+   saying what changed.
+2. Run `pytest tests/golden --update-golden`.
+3. Commit the regenerated `tests/golden/expected.json` **in the same commit**
+   as the change. The fixture diff then shows a reviewer exactly which calls
+   moved, and by how much.
+
+The update refuses to record moved scores if `ENGINE_VERSION` was not bumped.
+Stored analyses carry the version that produced them, and a scoring change
+under an unchanged version makes old and new results impossible to tell apart.
+
+Adding a case needs no bump: drop a transcript into `tests/golden/cases/` and
+run the update. Prefer a case that pins one specific behaviour, and say which
+in its filename.
+
 ## Adding a transcript format
 
 1. Write a parser in `app/analysis/parsing.py` returning a `Transcript`.
