@@ -85,6 +85,22 @@ _SCHEDULE_OBJECTS: frozenset[str] = frozenset({
 _OBJECT_LOOKAHEAD = 3
 
 
+# A rejection followed later in the call by the prospect agreeing a concrete
+# meeting is a rejection they reversed -- or one that was never about us. Issue
+# #40: "The other vendor said we're not a fit for them, which is why I'm talking
+# to you" disqualified a call scoring 72.4, above the hot threshold, in which
+# the prospect went on to book a demo.
+#
+# So the prospect's final word wins, but only a *concrete* commitment counts as
+# one. The meeting_booked lexicon also holds polite agreement ("that works",
+# "works for me", "let's do that") which a prospect says just as readily while
+# agreeing to be taken off a list. Lexicon weights are documented as how
+# diagnostic a phrase is, so this threshold reads them literally: the phrases
+# at or above it name a day, a slot or a calendar ("tuesday works", "does
+# thursday work", "put it in the calendar"); everything below is agreement.
+_SUPERSEDING_BOOKING_WEIGHT = 0.85
+
+
 def _rejection_targets_a_schedule(tokens: list[str], end: int) -> bool:
     """Whether a rejection phrase is aimed at a date rather than the offering."""
     return any(
@@ -102,6 +118,11 @@ def classify_outcome(transcript: Transcript) -> CallOutcome:
     closing_start = int(len(segments) * (1.0 - _CLOSING_FRACTION))
     scores: dict[str, float] = defaultdict(float)
     evidence: dict[str, list[Evidence]] = defaultdict(list)
+
+    # Positions as (segment index, token offset), so two matches within one
+    # utterance are still ordered correctly.
+    last_rejection: tuple[tuple[int, int], Evidence] | None = None
+    last_prospect_booking: tuple[int, int] | None = None
 
     for seg in segments:
         tokens = tokenize(seg.text)
@@ -125,24 +146,56 @@ def classify_outcome(transcript: Transcript) -> CallOutcome:
             if label == "information_requested" and seg.role is SpeakerRole.REP:
                 weight *= 0.5
             scores[label] += weight
-            evidence[label].append(
-                Evidence(
-                    segment_index=seg.index,
-                    quote=truncate_quote(seg.text),
-                    speaker=seg.speaker,
-                    role=seg.role,
-                    start_s=seg.start_s,
-                    matched_phrase=match.phrase,
-                )
+            found = Evidence(
+                segment_index=seg.index,
+                quote=truncate_quote(seg.text),
+                speaker=seg.speaker,
+                role=seg.role,
+                start_s=seg.start_s,
+                matched_phrase=match.phrase,
             )
+            evidence[label].append(found)
+
+            # max() rather than last-assigned, so correctness does not depend
+            # on the matcher returning matches in token order.
+            position = (seg.index, match.start)
+            if CallOutcomeLabel(label) in REJECTION_OUTCOMES:
+                if last_rejection is None or position > last_rejection[0]:
+                    last_rejection = (position, found)
+            elif (
+                label == CallOutcomeLabel.MEETING_BOOKED.value
+                and seg.role is SpeakerRole.PROSPECT
+                # The raw lexicon weight, before the closing boost: the
+                # question is how concrete the phrase is, not where it fell.
+                and match.weight >= _SUPERSEDING_BOOKING_WEIGHT
+            ):
+                last_prospect_booking = max(position, last_prospect_booking or position)
 
     if not scores:
         return CallOutcome(label=CallOutcomeLabel.NO_CLEAR_OUTCOME, confidence=0.35)
 
-    best = max(
-        scores,
-        key=lambda label: (_OUTCOME_PRECEDENCE.get(label, 0), scores[label]),
-    )
+    def rank(label: str) -> tuple[int, float]:
+        return (_OUTCOME_PRECEDENCE.get(label, 0), scores[label])
+
+    best = max(scores, key=rank)
+    superseded: Evidence | None = None
+    if (
+        CallOutcomeLabel(best) in REJECTION_OUTCOMES
+        and last_rejection is not None
+        and last_prospect_booking is not None
+        and last_prospect_booking > last_rejection[0]
+    ):
+        # Drop every rejection, not just the winning one: a NOT_A_FIT
+        # superseded by a booking must not hand the call to a NOT_INTERESTED
+        # voiced even earlier.
+        survivors = [
+            label for label in scores
+            if CallOutcomeLabel(label) not in REJECTION_OUTCOMES
+        ]
+        if survivors:
+            best = max(survivors, key=rank)
+            superseded = last_rejection[1]
+
     total = sum(scores.values())
     # Confidence blends share-of-evidence with absolute strength, so a single
     # weak match does not report 100% just for being unopposed.
@@ -153,6 +206,7 @@ def classify_outcome(transcript: Transcript) -> CallOutcome:
         label=CallOutcomeLabel(best),
         confidence=round(confidence, 3),
         evidence=evidence[best][:3],
+        superseded_rejection=superseded,
     )
 
 

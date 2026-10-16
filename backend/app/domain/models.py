@@ -29,7 +29,11 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field
 # seconds when the transcript carries timings, having previously used word
 # share as a proxy. Scores for timed transcripts move; scores for untimed ones
 # are unchanged.
-ENGINE_VERSION = "1.1.0"
+#
+# 1.2.0: a rejection the prospect later reverses by agreeing a concrete meeting
+# no longer disqualifies the call (issue #40). Calls with that pattern move from
+# DISQUALIFIED to their computed band; nothing else moves.
+ENGINE_VERSION = "1.2.0"
 
 # Bumped whenever the shape of these models changes incompatibly. Adding
 # `CallAnalysis.dynamics` with a default is additive -- rows written under
@@ -335,6 +339,12 @@ class CallOutcome(DomainModel):
     label: CallOutcomeLabel
     confidence: float = Field(ge=0.0, le=1.0)
     evidence: list[Evidence] = Field(default_factory=list)
+    superseded_rejection: Evidence | None = Field(
+        None,
+        description="A rejection the prospect voiced and then reversed by "
+        "agreeing a concrete meeting later in the call. Set only when that "
+        "override decided the outcome, so a reviewer can check the call.",
+    )
 
 
 class NextAction(DomainModel):

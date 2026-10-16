@@ -104,6 +104,15 @@ class AnalysisEngine:
         objections = signals.detect_objections(transcript)
         talk = outcome_mod.compute_talk_metrics(transcript)
         call_outcome = outcome_mod.classify_outcome(transcript)
+        if call_outcome.superseded_rejection is not None:
+            # Overriding a rejection is a judgement call, so say so where a
+            # reviewer will see it, quoting the words that were overridden.
+            overridden = call_outcome.superseded_rejection
+            warnings.append(
+                f'The prospect said "{overridden.matched_phrase}" but later '
+                "agreed a concrete meeting, so the call is scored on the meeting "
+                f'rather than disqualified. Worth a listen: "{overridden.quote}"'
+            )
 
         call_dynamics = dynamics_mod.analyse_dynamics(transcript)
         call_dynamics.observations = dynamics_mod.describe(call_dynamics)

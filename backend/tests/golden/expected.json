@@ -11,13 +11,13 @@
       "score": 0.0
     },
     "backend/tests/golden/cases/third-party-rejection-then-booking.txt": {
-      "band": "disqualified",
-      "outcome": "not_a_fit",
+      "band": "hot",
+      "outcome": "meeting_booked",
       "score": 72.4
     },
     "backend/tests/golden/cases/told-incumbent-not-renewing.txt": {
-      "band": "disqualified",
-      "outcome": "not_interested",
+      "band": "warm",
+      "outcome": "meeting_booked",
       "score": 54.5
     },
     "examples/transcripts/acme-pricing-pushback.txt": {
@@ -51,5 +51,5 @@
       "score": 64.6
     }
   },
-  "engine_version": "1.1.0"
+  "engine_version": "1.2.0"
 }

@@ -516,3 +516,106 @@ class TestDynamicsReachTheAnalysis:
         from app.domain.models import ENGINE_VERSION
 
         assert ENGINE_VERSION != "1.0.0"
+
+
+class TestSupersededRejection:
+    """Issue #40: a rejection the prospect later reverses is not a rejection.
+
+    Rejections outrank every positive outcome and hard-override the band, so a
+    single matched phrase decided the call regardless of anything after it.
+    "The other vendor said we're not a fit for them, which is why I'm talking
+    to you" disqualified a call scoring 72.4 -- above the hot threshold --
+    in which the prospect went on to book a demo.
+
+    The rule is that the prospect's final word wins, and only a concrete
+    commitment counts as one. Each guard below exists because a looser rule
+    would let a real rejection through.
+    """
+
+    STRONG_TAIL = (
+        "Prospect: Honestly our process is a mess and it costs us two days a week.\n"
+        "Prospect: We have budget allocated this quarter and I can approve it.\n"
+        "Rep: Shall we book a demo for Tuesday?\n"
+        "Prospect: Tuesday works, send the invite.\n"
+    )
+
+    def test_a_later_prospect_booking_supersedes_a_third_party_rejection(self, engine):
+        analysis = analyse(engine, (
+            "Rep: Thanks for taking the call.\n"
+            "Prospect: The other vendor said we're not a fit for them, which is "
+            "why I'm talking to you.\n" + self.STRONG_TAIL
+        ))
+        assert analysis.outcome.label is CallOutcomeLabel.MEETING_BOOKED
+        assert analysis.lead_score.band is not LeadBand.DISQUALIFIED
+
+    def test_rejecting_the_incumbent_then_booking_is_not_a_rejection(self, engine):
+        analysis = analyse(engine, (
+            "Rep: Thanks for taking the call.\n"
+            "Prospect: We told the incumbent we're not interested in renewing.\n"
+            + self.STRONG_TAIL
+        ))
+        assert analysis.outcome.label is CallOutcomeLabel.MEETING_BOOKED
+        assert analysis.lead_score.band is not LeadBand.DISQUALIFIED
+
+    def test_the_overridden_rejection_is_surfaced_for_review(self, engine):
+        """Overriding a rejection is a judgement call; a human should be able
+        to see that it was made and on which words."""
+        analysis = analyse(engine, (
+            "Rep: Thanks for taking the call.\n"
+            "Prospect: The other vendor said we're not a fit for them.\n"
+            + self.STRONG_TAIL
+        ))
+        superseded = analysis.outcome.superseded_rejection
+        assert superseded is not None
+        assert superseded.matched_phrase == "not a fit"
+        assert any("not a fit" in w for w in analysis.metadata.warnings)
+
+    # -- Guards: each of these must stay a rejection. ------------------------
+
+    def test_a_rejection_after_a_booking_still_disqualifies(self, engine):
+        """Order matters: booking then rejecting is a cancelled deal."""
+        analysis = analyse(engine, (
+            "Rep: Shall we book a demo?\n"
+            "Prospect: Sure, does Tuesday work?\n"
+            "Rep: Tuesday's great.\n"
+            "Prospect: Actually we're not interested, please take me off your list.\n"
+        ))
+        assert analysis.lead_score.band is LeadBand.DISQUALIFIED
+
+    def test_polite_agreement_after_a_rejection_does_not_supersede_it(self, engine):
+        """'That works' is in the meeting-booked lexicon, but agreeing to be
+        removed from a list is not booking a meeting."""
+        analysis = analyse(engine, (
+            "Rep: Thanks for taking the call.\n"
+            "Prospect: Honestly we're not interested.\n"
+            "Rep: Understood, I'll take you off our list.\n"
+            "Prospect: That works, thanks.\n"
+        ))
+        assert analysis.lead_score.band is LeadBand.DISQUALIFIED
+
+    def test_a_rep_side_booking_does_not_supersede_a_prospect_rejection(self, engine):
+        """The rep cannot book a meeting on the prospect's behalf."""
+        analysis = analyse(engine, (
+            "Prospect: We're not interested, no thank you.\n"
+            "Rep: I'll send an invite for Tuesday anyway, in case.\n"
+        ))
+        assert analysis.lead_score.band is LeadBand.DISQUALIFIED
+
+    def test_a_brush_off_is_not_a_booking(self, engine):
+        """'Send me something' is a NEXT_STEP signal and the classic brush-off,
+        which is why supersession keys on concrete bookings, not next steps."""
+        analysis = analyse(engine, (
+            "Rep: Do you have two minutes?\n"
+            "Prospect: Just send me something by email.\n"
+            "Prospect: Honestly, we're not interested. No thank you.\n"
+        ))
+        assert analysis.lead_score.band is LeadBand.DISQUALIFIED
+        assert analysis.outcome.superseded_rejection is None
+
+    def test_without_speaker_roles_rejection_precedence_is_unchanged(self, engine):
+        """No roles means no way to know who booked, so stay conservative."""
+        analysis = analyse(engine, (
+            "We're not a fit for that other vendor's plan.\n"
+            "Tuesday works, send the invite.\n"
+        ))
+        assert analysis.outcome.superseded_rejection is None
