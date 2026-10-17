@@ -373,3 +373,57 @@ class TestDatabaseUnderTest:
         fetched = client.get(f"{API}/calls/{created['id']}")
         assert fetched.status_code == 200
         assert fetched.json()["title"] == "dialect round trip"
+
+
+class TestTimestampsAreTimezoneAware:
+    """Issue #38: SQLite drops tzinfo, so timestamps came back naive.
+
+    Not cosmetic. The dashboard passes `created_at` to `new Date()`, and
+    JavaScript parses an ISO string without an offset as *local* time. On the
+    default SQLite backend a call created thirty seconds ago rendered as
+    "6h ago" in India and "just now" for four hours in New York; only UTC
+    users saw the truth. These run on both backends via TEST_DATABASE_URL.
+    """
+
+    @staticmethod
+    def _parse(value: str):
+        from datetime import datetime
+
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+    def test_read_back_timestamps_carry_a_utc_offset(self, client):
+        created = create_call(client, title="tz round trip")
+        fetched = client.get(f"{API}/calls/{created['id']}").json()
+
+        for field in ("created_at", "updated_at"):
+            stamp = self._parse(fetched[field])
+            assert stamp.tzinfo is not None, f"{field} came back naive: {fetched[field]}"
+            assert stamp.utcoffset().total_seconds() == 0, f"{field} is not UTC"
+
+    def test_list_timestamps_carry_a_utc_offset(self, client):
+        create_call(client, title="tz list")
+        item = client.get(f"{API}/calls").json()["items"][0]
+        assert self._parse(item["created_at"]).tzinfo is not None
+
+    def test_filter_with_an_offset_compares_instants_not_wall_clocks(self, client):
+        """`created_after` in +05:30 must mean the same instant as in UTC.
+
+        Before the fix SQLite compared the stored UTC wall time against the
+        filter's *local* wall time, so a bound one minute before creation,
+        written in IST, sat five and a half hours in the future and excluded
+        the call it should have matched.
+        """
+        from datetime import timedelta, timezone
+
+        created = create_call(client, title="tz filter")
+        made = self._parse(created["created_at"])
+        ist = timezone(timedelta(hours=5, minutes=30))
+
+        just_before = (made - timedelta(minutes=1)).astimezone(ist).isoformat()
+        hour_after = (made + timedelta(hours=1)).astimezone(ist).isoformat()
+
+        included = client.get(f"{API}/calls", params={"created_after": just_before})
+        excluded = client.get(f"{API}/calls", params={"created_after": hour_after})
+
+        assert created["id"] in {c["id"] for c in included.json()["items"]}
+        assert created["id"] not in {c["id"] for c in excluded.json()["items"]}

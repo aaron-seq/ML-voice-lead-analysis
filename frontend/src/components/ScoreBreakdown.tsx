@@ -91,14 +91,20 @@ export function ScoreBreakdown({ leadScore, evidenceByComponent = {} }: Props) {
                   <th scope="row">
                     {titleise(component.name)}
                     {evidence.length > 0 && (
+                      // No aria-label: it would replace the visible text as the
+                      // accessible name, so a speech-control user saying what
+                      // they see ("2 quotes") would match nothing (WCAG 2.5.3,
+                      // Label in Name). Visible text first, context for screen
+                      // readers after, and the +/− glyph hidden because
+                      // aria-expanded already announces the state.
                       <button
                         type="button"
                         className="evidence-toggle"
                         aria-expanded={isOpen}
-                        aria-label={`Show evidence for ${component.name}`}
                       >
-                        {isOpen ? '−' : '+'} {evidence.length} quote
-                        {evidence.length === 1 ? '' : 's'}
+                        <span aria-hidden="true">{isOpen ? '−' : '+'}</span>{' '}
+                        {evidence.length} quote{evidence.length === 1 ? '' : 's'}
+                        <span className="sr-only"> for {titleise(component.name)}</span>
                       </button>
                     )}
                   </th>

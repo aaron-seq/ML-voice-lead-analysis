@@ -1,0 +1,55 @@
+{
+  "cases": {
+    "backend/tests/golden/cases/rejection-after-booking.txt": {
+      "band": "disqualified",
+      "outcome": "not_interested",
+      "score": 2.2
+    },
+    "backend/tests/golden/cases/send-me-brush-off.txt": {
+      "band": "disqualified",
+      "outcome": "not_interested",
+      "score": 0.0
+    },
+    "backend/tests/golden/cases/third-party-rejection-then-booking.txt": {
+      "band": "hot",
+      "outcome": "meeting_booked",
+      "score": 72.4
+    },
+    "backend/tests/golden/cases/told-incumbent-not-renewing.txt": {
+      "band": "warm",
+      "outcome": "meeting_booked",
+      "score": 54.5
+    },
+    "examples/transcripts/acme-pricing-pushback.txt": {
+      "band": "warm",
+      "outcome": "meeting_booked",
+      "score": 55.5
+    },
+    "examples/transcripts/globex-gatekeeper.txt": {
+      "band": "cold",
+      "outcome": "gatekeeper_only",
+      "score": 0.0
+    },
+    "examples/transcripts/hooli-technical-eval.txt": {
+      "band": "warm",
+      "outcome": "information_requested",
+      "score": 71.2
+    },
+    "examples/transcripts/initech-not-interested.txt": {
+      "band": "disqualified",
+      "outcome": "not_interested",
+      "score": 0.0
+    },
+    "examples/transcripts/northwind-discovery.txt": {
+      "band": "hot",
+      "outcome": "meeting_booked",
+      "score": 73.7
+    },
+    "examples/transcripts/stark-timed-discovery.vtt": {
+      "band": "warm",
+      "outcome": "meeting_booked",
+      "score": 64.6
+    }
+  },
+  "engine_version": "1.2.0"
+}

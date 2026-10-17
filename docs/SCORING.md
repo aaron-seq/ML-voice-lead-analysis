@@ -90,6 +90,38 @@ need/competitor objection at severity ≥ 0.85). A call that simply produced few
 signals is a *cold* lead, not a dead one. Collapsing the two would make "show me
 disqualified leads" return every thin transcript.
 
+### A rejection the prospect reverses is not a rejection
+
+A rejection outranks every positive outcome and overrides the arithmetic, so
+historically one matched phrase decided the whole call. *"The other vendor said
+we're not a fit for them, which is why I'm talking to you"* disqualified a call
+scoring 72.4, above the hot threshold, in which the prospect then booked a
+demo.
+
+The rule now is that **the prospect's final word wins**. A rejection is
+superseded when, *later* in the call, the prospect agrees a concrete meeting.
+All three conditions matter, and each one blocks a way a real rejection could
+otherwise slip through:
+
+| Condition | Why it is required |
+|---|---|
+| The booking comes **after** the last rejection | Booking and then rejecting is a cancelled deal and still disqualifies. Ordering is by segment, then by position within it. |
+| The **prospect** agreed it | A rep cannot book a meeting on the prospect's behalf. Undiarised calls, where nobody can tell who spoke, keep the old precedence. |
+| It is a **concrete** booking (lexicon weight ≥ 0.85) | `meeting_booked` also contains polite agreement such as "that works" and "works for me", which a prospect says just as easily when agreeing to be taken off a list. The phrases at or above the threshold name a day, a slot or a calendar. |
+
+`next_step` signals deliberately do not count: they include "send me something",
+the classic brush-off.
+
+An override is never silent. `outcome.superseded_rejection` carries the
+rejection that was overridden, and the analysis adds a warning quoting it so a
+reviewer can listen to that part of the call.
+
+What this does **not** fix: a standalone third-party rejection with nothing
+else in the call is still disqualified, because without a later commitment
+there is nothing to weigh it against. Telling *"my boss wasn't interested"*
+apart from *"I'm not interested"* needs subject attribution, which is tracked
+separately.
+
 ## Confidence
 
 Reported separately from the score, on [0,1]:

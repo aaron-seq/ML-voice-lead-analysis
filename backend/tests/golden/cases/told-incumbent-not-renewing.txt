@@ -1,0 +1,8 @@
+Rep: Thanks for making the time, Omar. What prompted you to reach out?
+Prospect: Our contract with the current provider is up. We told the incumbent we're not interested in renewing.
+Prospect: The manual work is killing us. We're struggling with three engineers babysitting cron jobs.
+Rep: What's driving the timing?
+Prospect: We need something live by the end of the quarter. Budget is approved and it's my call.
+Rep: Would a proof of concept on two of your pipelines help?
+Prospect: Yes. Does Thursday work to kick it off?
+Rep: Thursday is perfect, I'll send an invite.

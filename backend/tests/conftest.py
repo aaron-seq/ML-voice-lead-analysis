@@ -23,6 +23,16 @@ from app.domain.models import Transcript
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--update-golden",
+        action="store_true",
+        default=False,
+        help="Rewrite tests/golden/expected.json from the current engine. Refuses "
+        "if pinned scores moved without an ENGINE_VERSION bump.",
+    )
+
 # When set, the suite runs against this database instead of a per-test SQLite
 # file. The `Backend (PostgreSQL)` CI job sets it.
 #

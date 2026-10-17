@@ -1,0 +1,5 @@
+Rep: Hi Lee, following up on our call last week. Shall we book a demo?
+Prospect: Sure, does Tuesday work?
+Rep: Tuesday's great, I'll send an invite.
+Prospect: Actually, I've spoken to my team since. We're not interested, please take me off your list.
+Rep: Understood. Thanks for letting me know.

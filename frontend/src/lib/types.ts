@@ -108,6 +108,12 @@ export interface CallOutcome {
   label: CallOutcomeLabel;
   confidence: number;
   evidence: Evidence[];
+  /**
+   * A rejection the prospect voiced and then reversed by agreeing a concrete
+   * meeting. Set only when that override decided the outcome; the engine also
+   * adds a metadata warning quoting it, which CallDetail already renders.
+   */
+  superseded_rejection: Evidence | null;
 }
 
 export interface NextAction {
