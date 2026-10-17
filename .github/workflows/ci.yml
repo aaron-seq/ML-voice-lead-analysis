@@ -196,11 +196,17 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      # axe-core and Playwright are exact-pinned devDependencies, so `npm ci`
+      # installs the same versions every run and `playwright install` fetches
+      # the browser matched to them. They used to be installed here unpinned
+      # with --no-save, which let a new axe release start enforcing a rule
+      # (label-content-name-mismatch, in 4.14) and fail an unrelated PR with no
+      # code change. New rules should arrive in a version-bump PR, where a
+      # failure is attributable, not in whichever PR runs next.
       - name: Install
         run: |
           pip install -r backend/requirements.txt
           cd frontend && npm ci && npx playwright install --with-deps chromium
-          npm install --no-save @axe-core/playwright playwright
 
       - name: Seed and boot
         run: |
